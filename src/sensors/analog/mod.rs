@@ -13,7 +13,7 @@ use crate::i2c::I2CBit;
 
 mod analog_registry;
 
-/// Structure de données issus de la central inertiel
+/// Structure de données pour les données analogiques
 #[derive(Encode, Decode, Clone, Debug, Copy)]
 pub struct AnalogData {
     pub status: u8,
@@ -110,25 +110,25 @@ impl Analog {
         self.i2c.ecriture_bits16(analog_registry::ADS1115_CONFIG, analog_registry::ADS1115_CONFIG_PGA_BIT, analog_registry::ADS1115_CONFIG_PGA_LEN, gain)?;
         match gain {
             analog_registry::ADS1115_CONFIG_PGA_FSR_6_144_VAL => {
-                return Ok(6.144/2.0_f32.powf(16.0));
+                return Ok((6.144*2.0)/2.0_f32.powf(16.0));
             },
             analog_registry::ADS1115_CONFIG_PGA_FSR_4_096_VAL => {
-                return Ok(4.096/2.0_f32.powf(16.0));
+                return Ok((4.096*2.0)/2.0_f32.powf(16.0));
             },
             analog_registry::ADS1115_CONFIG_PGA_FSR_2_048_VAL => {
-                return Ok(2.048/2.0_f32.powf(16.0));
+                return Ok((2.048*2.0)/2.0_f32.powf(16.0));
             },
             analog_registry::ADS1115_CONFIG_PGA_FSR_1_024_VAL => {
-                return Ok(1.024/2.0_f32.powf(16.0));
+                return Ok((1.024*2.0)/2.0_f32.powf(16.0));
             },
             analog_registry::ADS1115_CONFIG_PGA_FSR_0_512_VAL => {
-                return Ok(0.512/2.0_f32.powf(16.0));
+                return Ok((0.512*2.0)/2.0_f32.powf(16.0));
             },
             analog_registry::ADS1115_CONFIG_PGA_FSR_0_256_1_VAL => {
-                return Ok(0.256/2.0_f32.powf(16.0));
+                return Ok((0.256*2.0)/2.0_f32.powf(16.0));
             },
             analog_registry::ADS1115_CONFIG_PGA_FSR_0_256_2_VAL => {
-                return Ok(0.256/2.0_f32.powf(16.0));
+                return Ok((0.256*2.0)/2.0_f32.powf(16.0));
             },
             default => {
                 println!("[ANALOG] Gain inconnu, défini à 1 par défaut.");
@@ -157,7 +157,7 @@ impl Analog {
     fn get_voltage(&self, input: u16, gain: u16) -> Result<f32, Box<dyn Error>> {
         // Défini les paramètres à utiliser
         self.set_input(input);
-        let gain = self.set_gain(gain)?;
+        let gain_adc = self.set_gain(gain)?;
 
         // Active un Sigle Shot
         self.start_conversion()?;
@@ -165,8 +165,13 @@ impl Analog {
         // Attend que la valeur soit bien obtenable
         while self.is_conversion_progress()? {}
 
+        let mut raw = self.get_voltage_raw()?;
+        if raw > 65500 || raw < 100 {
+            raw = 0;
+        }
+
         // Retourne la valeur obtenue
-        Ok((self.get_voltage_raw()? as f32) * gain)
+        Ok((((raw as f32) * gain_adc) * analog_registry::ANALOG_BATT_GAIN))
     }
 
     /// Lecture des données du capteur et conversion

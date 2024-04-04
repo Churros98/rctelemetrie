@@ -43,10 +43,10 @@ impl I2CBit for I2c {
 
     /// Lecture de 2 octets (dword) sur la position donnée d'un registre 8 bits
     fn lecture_dword(&self, command: u8) -> Result<u16, Box<dyn Error>> {
-        let mut buffer: &mut [u8] = &mut [0];
+        let mut buffer: &mut [u8] = &mut [0, 0];
         self.block_read(command, &mut buffer)?;
-        
-        Ok(((buffer[0] as u16) << 8) | buffer[1] as u16)
+
+        Ok( ((buffer[0] as u16) << 8) | buffer[1] as u16 )
     }
 
     /// Ecrit un bit sur la position donnée d'un registre 8 bits

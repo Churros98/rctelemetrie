@@ -1,5 +1,7 @@
 #![allow(unused)]
 
+pub const ANALOG_BATT_GAIN: f32 = 2.5;
+
 pub const ANALOG_ADDR: u16 = 0x48;
 
 pub const ADS1115_CONVERSION: u8 = 0x0;

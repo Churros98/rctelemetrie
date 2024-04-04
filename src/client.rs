@@ -39,7 +39,9 @@ impl Telemetrie {
         let client_addr = client.local_addr().unwrap();
 
         println!("[TELEMETRIE][{}] ERREUR: {}.", client_addr.to_string(), e);
-        client.shutdown().await.expect("[TELEMETRIE] Impossible de fermer la connexion.\n");
+        if client.shutdown().await.is_err() {
+            println!("[TELEMETRIE] Impossible de fermer la connexion.");
+        }
     }
 
     pub async fn update(&self) {

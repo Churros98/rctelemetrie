@@ -13,7 +13,7 @@ use self::steering::Steering;
 pub mod motor;
 pub mod steering;
 
-const DEAD_TIMEOUT: u128 = 1000; // 1sec
+const DEAD_TIMEOUT: u128 = 500; // 0.5sec
 
 #[derive(Encode, Decode)]
 pub struct ActuatorData {
@@ -33,6 +33,7 @@ pub struct Acurator {
     motor: motor::Motor,
     steering: steering::Steering,
     last_update: SystemTime,
+    dead_timeout: bool,
 }
 impl Acurator {
     pub fn new(is_stop: Arc<AtomicBool>, rx: Receiver<ActuatorData>) -> Result<Self, Box<dyn Error>> {
@@ -47,6 +48,7 @@ impl Acurator {
             motor: motor,
             steering: steering,
             last_update: SystemTime::now(),
+            dead_timeout: false,
         };
 
         Ok(acurator)
@@ -65,12 +67,20 @@ impl Acurator {
                 let _ = self.motor.update(data.motor);
 
                 self.last_update = SystemTime::now();
+                if self.dead_timeout {
+                    println!("[ACTUATOR] Reprise d'une situation normale.");
+                    self.dead_timeout = false;
+                }
             } else {
                 // Pas de réponse après X ms ? Alors je mets tous sur IDLE.
                 if self.last_update.elapsed().unwrap().as_millis() > DEAD_TIMEOUT {
-                    println!("[ACTUATOR] Aucune réponse du serveur. IDLE.");
-                    self.steering.update(Steering::empty())?;
-                    self.motor.update(Motor::empty())?;
+                    if !self.dead_timeout {
+                        println!("[ACTUATOR] Aucune réponse du serveur. IDLE.");
+                        self.dead_timeout = true;
+                    }
+
+                    let _ = self.steering.update(Steering::empty());
+                    let _ = self.motor.update(Motor::empty())?;
                 }
             }
         }

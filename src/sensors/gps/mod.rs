@@ -128,7 +128,7 @@ impl GPS {
                 }
             }
             &_ => {
-                println!("[GPS] Trame inconnu: {}", message_split[0])
+                //println!("[GPS] Trame inconnu: {}", message_split[0])
             }
         }
     }
