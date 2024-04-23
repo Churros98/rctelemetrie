@@ -10,9 +10,11 @@ use std::fmt;
 #[derive(Encode, Decode, Clone, Debug, Copy)]
 pub struct GPSData {
     pub status: u8,
-    pub lat: f32,
+    pub lat_deg: f32,
+    pub lat_min: f32,
     pub dir_lat: u8,
-    pub long: f32,
+    pub long_deg: f32,
+    pub long_min: f32,
     pub dir_long: u8,
     pub decli_mag: f32,
     pub cap_vrai: f32,
@@ -22,7 +24,7 @@ pub struct GPSData {
 
 impl fmt::Display for GPSData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LAT: {} LONG: {}", self.lat, self.long)
+        write!(f, "LAT: {}\" {} LONG: {}\" {}", self.lat_deg, self.lat_min, self.long_deg, self.long_min)
     }
 }
 
@@ -31,9 +33,11 @@ pub struct GPS {
     uart: Uart,
     message: Vec<u8>,
     status: u8,
-    lat: f32,
+    lat_deg: f32,
+    lat_min: f32,
     dir_lat: u8,
-    long: f32,
+    long_deg: f32,
+    long_min: f32,
     dir_long: u8,
     decli_mag: f32,
     cap_vrai: f32,
@@ -45,7 +49,7 @@ impl GPS {
     /// Constructeur
     pub fn new() -> Result<Self, Box<dyn Error>> {
         println!("[GPS] Initialisation ...");
-        let uart_str = Path::new("/dev/serial0");
+        let uart_str = Path::new("/dev/ttyS0");
         let uart = Uart::with_path(uart_str, 38400, Parity::None, 8, 1);
         
         match uart {
@@ -56,9 +60,11 @@ impl GPS {
                     uart: uart,
                     message: Vec::new(),
                     status: 0x0,
-                    lat: 0.0,
+                    lat_deg: 0.0,
+                    lat_min: 0.0,
                     dir_lat: b'N',
-                    long: 0.0,
+                    long_deg: 0.0,
+                    long_min: 0.0,
                     dir_long: b'W',
                     decli_mag: 0.0,
                     cap_vrai: 0.0,
@@ -85,11 +91,18 @@ impl GPS {
         }
 
         match message_split[0] {
-            "GPGLL" => {
-                if message_split.len() >= 5 {
-                    self.lat = message_split[1].parse::<f32>().unwrap_or(0.0);
-                    self.long = message_split[3].parse::<f32>().unwrap_or(0.0);
-                    
+            "GNGLL" => {
+                if message_split.len() >= 8 {
+
+                    if message_split[1].len() > 3 && message_split[3].len() > 3 {
+                        self.lat_deg = message_split[1][..2].parse::<f32>().unwrap_or(0.0);
+                        self.lat_min = message_split[1][2..].parse::<f32>().unwrap_or(0.0);
+
+                        self.long_deg = message_split[3][..3].parse::<f32>().unwrap_or(0.0);
+                        self.long_min = message_split[3][3..].parse::<f32>().unwrap_or(0.0);
+                    }
+
+
                     let dir_lat = message_split[2].as_bytes();
                     if dir_lat.len() > 0 {
                         self.dir_lat = message_split[2].as_bytes()[0];
@@ -100,11 +113,11 @@ impl GPS {
                         self.dir_long = message_split[4].as_bytes()[0];
                     }
 
-                    //println!("[GPS] Réception coordonnées : ({} {}) ({} {})", lat, self.dir_lat as char, long, self.dir_long as char);
+                    //println!("[GPS] Réception coordonnées : ({} {}) ({} {})", self.lat, self.dir_lat as char, self.long, self.dir_long as char);
                 }
             },
-            "GPVTG" => {
-                if message_split.len() >= 8 {
+            "GNVTG" => {
+                if message_split.len() >= 9 {
                     self.cap_vrai = message_split[1].parse::<f32>().unwrap_or(0.0);
                     self.cap_mag = message_split[3].parse::<f32>().unwrap_or(0.0);
                     self.vitesse_sol = message_split[7].parse::<f32>().unwrap_or(0.0);
@@ -112,18 +125,14 @@ impl GPS {
                     //println!("[GPS] Réception cap et vitesse : (Cv: {}) (Cm: {}) (Vs: {})", cap_vrai, cap_mag, vitesse_sol);
                 }
             },
-            "GPRMC" => {
-                if message_split.len() >= 12 {
-                    self.decli_mag = message_split[11].parse::<f32>().unwrap_or(0.0);
-                    //println!("[GPS] Déclinaison magnétique : {}", decli_mag);
-                }
-            },
-            "GPGGA" => {
-                if message_split.len() >= 9 {
-                    if message_split[6] == "1" || message_split[6] == "2" {
-                        self.status |= 0x2; // Fix OK.
+            "GNGGA" => {
+                if message_split.len() == 15 {
+                    let fix = message_split[6];
+
+                    if fix != "0" {
+                        self.status |= 0x1; // Fix OK.
                     } else {
-                        self.status &= (0x2 ^ 0xFF); // Fix KO.
+                        self.status &= (0x1 ^ 0xFF); // Fix KO.
                     }
                 }
             }
@@ -167,9 +176,11 @@ impl GPS {
     pub fn read_values(&self) -> GPSData {
         GPSData {
             status: self.status,
-            lat: self.lat,
+            lat_deg: self.lat_deg,
+            lat_min: self.lat_min,
             dir_lat: self.dir_lat,
-            long: self.long,
+            long_deg: self.long_deg,
+            long_min: self.long_min,
             dir_long: self.dir_long,
             decli_mag: self.decli_mag,
             cap_vrai: self.cap_vrai,
@@ -183,14 +194,16 @@ impl GPS {
     pub fn empty() -> GPSData {
         GPSData {
             status: 0xFF,
-            lat: 0.0,
+            lat_deg: 0.0,
+            lat_min: 0.0,
             dir_lat: b'N',
-            long: 0.0,
+            long_deg: 0.0,
+            long_min: 0.0,
             dir_long: b'W',
             decli_mag: 0.0,
-            cap_vrai: -1.0,
-            cap_mag: -1.0,
-            vitesse_sol: -1.0,
+            cap_vrai: 0.0,
+            cap_mag: 0.0,
+            vitesse_sol: 0.0,
         } 
     }
 }

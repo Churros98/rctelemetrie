@@ -52,9 +52,11 @@ impl MAG {
         let i2c = I2c::new();
         match i2c {
             Ok(mut i2c) => {
-                i2c.set_slave_address(mag_registry::MAG_ADDR)?;
+                i2c.set_slave_address(mag_registry::HMC8553L_MAG_ADDR)?;
 
                 // Créer l'objet et commence l'initialisation
+                // NOTE : Pour obtenir les données de calibration, utiliser la partie "RAW" sur l'UI puis
+                // le script : https://github.com/nliaudat/magnetometer_calibration/
                 let mut mag = Self {
                     i2c: i2c,
                     status: 0x0,
@@ -63,8 +65,8 @@ impl MAG {
                     raw_y: 0.0,
                     raw_z: 0.0,
                     mag_decl: 2.44,
-                    hard_cal: Vector3::new(0.0, 0.0, 0.0),
-                    soft_cal: Matrix3::new(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
+                    hard_cal: Vector3::new(-135.88267489, 191.66016152, -45.84590397),
+                    soft_cal: Matrix3::new(1.14291451, -0.0145877, -0.03896587, -0.0145877, 1.12288524, 0.02235676, -0.03896587, 0.02235676, 1.1820893),
                 };
 
                 // Prépare le module à être utilisé
@@ -83,80 +85,37 @@ impl MAG {
     /// Initialise rapidement le module avec des valeurs pré-défini
     pub fn init_module(&mut self) -> Result<(), Box<dyn Error>> {
         println!("[MAG] Initialisation ...");
-        self.set_setreset(true)?;
-        self.set_mode(1)?;
-        self.set_output_rate(0)?;
-        self.set_scale(0)?;
-        self.set_osr(0)?;
+
+        // Configuration par défaut pour le HMC8553L
+        self.i2c.ecriture_word(mag_registry::HMC8553L_CONF_A, 0x10);
+        self.i2c.ecriture_word(mag_registry::HMC8553L_CONF_B, 0x20);
+
+        // Activation de la mesure continue
+        self.i2c.ecriture_word(mag_registry::HMC8553L_MODE, 0x00);
+
         self.status |= 0x1;
         Ok(())
     }
     
-    /// Récupére la valeur "magnétique?" en X (RAW)
+    /// Récupére la valeur en X (RAW)
     pub fn get_mag_x_raw(&self) -> Result<i16, Box<dyn Error>> {
-        let mag_x_h = self.i2c.lecture_word(mag_registry::QMC5883L_X_H)?;
-        let mag_x_l = self.i2c.lecture_word(mag_registry::QMC5883L_X_L)?;
+        let mag_x_h = self.i2c.lecture_word(mag_registry::HMC8553L_X_H)?;
+        let mag_x_l = self.i2c.lecture_word(mag_registry::HMC8553L_X_L)?;
         Ok(((mag_x_h as i16) << 8) | mag_x_l as i16)
     }
 
-    /// Récupére la valeur "magnétique?" en Y
+    /// Récupére la valeur en Y
     pub fn get_mag_y_raw(&self) -> Result<i16, Box<dyn Error>> {
-        let mag_y_h = self.i2c.lecture_word(mag_registry::QMC5883L_Y_H)?;
-        let mag_y_l = self.i2c.lecture_word(mag_registry::QMC5883L_Y_L)?;
+        let mag_y_h = self.i2c.lecture_word(mag_registry::HMC8553L_Y_H)?;
+        let mag_y_l = self.i2c.lecture_word(mag_registry::HMC8553L_Y_L)?;
         Ok(((mag_y_h as i16) << 8) | mag_y_l as i16)
     }
 
-    /// Récupére la valeur "magnétique?" en Z
+    /// Récupére la valeur en Z
     pub fn get_mag_z_raw(&self) -> Result<i16, Box<dyn Error>> {
-        let mag_z_h = self.i2c.lecture_word(mag_registry::QMC5883L_Z_H)?;
-        let mag_z_l = self.i2c.lecture_word(mag_registry::QMC5883L_Z_L)?;
+        let mag_z_h = self.i2c.lecture_word(mag_registry::HMC8553L_Z_H)?;
+        let mag_z_l = self.i2c.lecture_word(mag_registry::HMC8553L_Z_L)?;
         Ok(((mag_z_h as i16) << 8) | mag_z_l as i16)
-    }
-
-    /// Récupére le "Chip ID"
-    pub fn get_chip_id(&self) -> Result<u8, Box<dyn Error>> {
-        self.i2c.lecture_word(mag_registry::QMC5883L_CHIP_ID)
-    }
-
-    /// Vérifie si les données sont disponible
-    pub fn is_data_ready(&self) -> Result<bool, Box<dyn Error>> {
-        self.i2c.lecture_bit8(mag_registry::QMC5883L_INFO, mag_registry::QMC5883L_INFO_DRDY_BIT)
-    }
-
-    /// Vérifie si le capteur n'est pas en saturation (utile pour le moteur !)
-    pub fn is_overflow(&self) -> Result<bool, Box<dyn Error>> {
-        self.i2c.lecture_bit8(mag_registry::QMC5883L_INFO, mag_registry::QMC5883L_INFO_OVL_BIT)
-    }
-
-    /// Vérifie si le mode "skip" n'est pas actif
-    pub fn is_data_skip(&self) -> Result<bool, Box<dyn Error>> {
-        self.i2c.lecture_bit8(mag_registry::QMC5883L_INFO, mag_registry::QMC5883L_INFO_DOR_BIT)
-    }
-
-    /// Défini le mode du capteur
-    pub fn set_mode(&self, param: u8) -> Result<(), Box<dyn Error>> {
-        self.i2c.ecriture_bits8(mag_registry::QMC5883L_SETTINGS, mag_registry::QMC5883L_SETTINGS_MODE_BIT, mag_registry::QMC5883L_SETTINGS_SIZE, param)
-    }
-
-    /// Défini le sample rate de sortie du capteur
-    pub fn set_output_rate(&self, param: u8) -> Result<(), Box<dyn Error>> {
-        self.i2c.ecriture_bits8(mag_registry::QMC5883L_SETTINGS, mag_registry::QMC5883L_SETTINGS_ODR_BIT, mag_registry::QMC5883L_SETTINGS_SIZE, param)
-    }
-
-    /// Défini le scale du capteur
-    pub fn set_scale(&self, param: u8) -> Result<(), Box<dyn Error>> {
-        self.i2c.ecriture_bits8(mag_registry::QMC5883L_SETTINGS, mag_registry::QMC5883L_SETTINGS_RNG_BIT, mag_registry::QMC5883L_SETTINGS_SIZE, param)
-    }
-
-    /// Défini le "Over Sample Rate"
-    /// http://wiki.sunfounder.cc/images/7/72/QMC5883L-Datasheet-1.0.pdf (Page 17)
-    pub fn set_osr(&self, param: u8) -> Result<(), Box<dyn Error>> {
-        self.i2c.ecriture_bits8(mag_registry::QMC5883L_SETTINGS, mag_registry::QMC5883L_SETTINGS_OSR_BIT, mag_registry::QMC5883L_SETTINGS_SIZE, param)
-    }
-
-    /// Défini le Set/Reset
-    pub fn set_setreset(&self, activate: bool) -> Result<(), Box<dyn Error>> {
-        self.i2c.ecriture_bit8(mag_registry::QMC5883L_SETRESET, 0, activate)
     }
 
     /// Permet de définir un feedback à partir de donnée d'un autre capteur (Déclinaison magnétique)
@@ -184,11 +143,15 @@ impl MAG {
 
         // Correction "Hard Iron" & "Soft Iron"
         let hard_mag  = Matrix1x3::new(self.raw_x - self.hard_cal.x, self.raw_y - self.hard_cal.y, self.raw_z - self.hard_cal.z);
-        let corrected_mag = hard_mag; //* self.soft_cal;
+        let corrected_mag = hard_mag * self.soft_cal;
 
         // Calcul du heading, prend en compte la déclinaison magnétique
-        let mut heading = (corrected_mag.x.atan2(corrected_mag.y) * (180.0 / PI)) + self.mag_decl;
-        heading = heading % 360.0;
+        let mut heading = -((corrected_mag.x.atan2(corrected_mag.y) * (180.0 / PI)) + self.mag_decl);
+
+        if (heading < 0.0) {
+            heading = heading + 360.0;
+        }
+
         self.heading = heading;
 
         Ok(())

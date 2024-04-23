@@ -379,10 +379,10 @@ impl IMU {
     pub fn empty() -> IMUData {
         IMUData {
             status: 0xFF,
-            ax: -1.0,
-            ay: -1.0,
-            az: -1.0,
-            temp: -1.0,
+            ax: 0.0,
+            ay: 0.0,
+            az: 0.0,
+            temp: 0.0,
         }
     }
 }

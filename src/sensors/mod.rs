@@ -39,8 +39,8 @@ pub struct Sensors {
     is_stop: Arc<AtomicBool>,
     tx: Arc<Mutex<watch::Sender<SensorsData>>>,
     gps: GPS,
-    // imu: IMU,
-    // mag: MAG,
+    imu: IMU,
+    mag: MAG,
     analog: Analog,
 }
 
@@ -58,8 +58,8 @@ impl Sensors {
         println!("[SENSORS] Initialisation ...");
 
         let gps = GPS::new()?;
-        // let imu = IMU::new()?;
-        // let mag = MAG::new()?;
+        let imu = IMU::new()?;
+        let mag = MAG::new()?;
         let analog = Analog::new()?;
 
         println!("[SENSORS] Capteurs initialisé !");
@@ -68,16 +68,16 @@ impl Sensors {
             is_stop: is_stop,
             tx: tx,
             gps: gps,
-            // imu: imu,
-            // mag: mag,
+            imu: imu,
+            mag: mag,
             analog: analog,
         })
     }
 
     pub async fn update(&mut self) {
         let mut gps_alive = true;
-        let mut imu_alive = false;
-        let mut mag_alive = false;
+        let mut imu_alive = true;
+        let mut mag_alive = true;
         let mut analog_alive = true;
 
         println!("[SENSORS] Traitement des données ...");
@@ -86,18 +86,22 @@ impl Sensors {
         while !self.is_stop.load(Ordering::Relaxed) {
             // Mise à jour et traitement des données
             if self.gps.update().is_err() {
+                println!("[SENSORS] ERREUR: GPS");
                 gps_alive = false;
             }
     
-            // if self.imu.update().is_err() {
-            //     imu_alive = false;
-            // }
+            if self.imu.update().is_err() {
+                println!("[SENSORS] ERREUR: IMU");
+                imu_alive = false;
+            }
     
-            // if self.mag.update().is_err() {
-            //     mag_alive = false;
-            // }
+            if self.mag.update().is_err() {
+                println!("[SENSORS] ERREUR: MAG");
+                mag_alive = false;
+            }
 
             if self.analog.update().is_err() {
+                println!("[SENSORS] ERREUR: ANALOG");
                 analog_alive = false;
             }
 
@@ -111,22 +115,22 @@ impl Sensors {
                 gps_data = self.gps.read_values();
             }
     
-            // if imu_alive {
-            //     imu_data = self.imu.read_values();
-            // }
+            if imu_alive {
+                imu_data = self.imu.read_values();
+            }
     
-            // if mag_alive {
-            //     mag_data = self.mag.read_values();
-            // }
+            if mag_alive {
+                mag_data = self.mag.read_values();
+            }
 
             if analog_alive {
                 analog_data = self.analog.read_values();
             }
     
-            // Envoi des feedbacks au capteurs
-            // if mag_alive && gps_alive && gps_data.decli_mag != 0.0 {
-            //     self.mag.feedback_set_mag_decl(gps_data.decli_mag);
-            // }
+            //Envoi des feedbacks au capteurs
+            if mag_alive && gps_alive && gps_data.decli_mag != 0.0 {
+                self.mag.feedback_set_mag_decl(gps_data.decli_mag);
+            }
             
             // Préparation des données
             let sensors_data = SensorsData {
