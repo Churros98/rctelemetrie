@@ -13,7 +13,7 @@ use self::steering::Steering;
 pub mod motor;
 pub mod steering;
 
-const DEAD_TIMEOUT: u128 = 500; // 0.5sec
+const DEAD_TIMEOUT: u128 = 2000; // 2sec
 
 #[derive(Encode, Decode)]
 pub struct ActuatorData {
@@ -35,6 +35,7 @@ pub struct Acurator {
     last_update: SystemTime,
     dead_timeout: bool,
 }
+
 impl Acurator {
     pub fn new(is_stop: Arc<AtomicBool>, rx: Receiver<ActuatorData>) -> Result<Self, Box<dyn Error>> {
         println!("[ACTUATOR] Initialisation ...");

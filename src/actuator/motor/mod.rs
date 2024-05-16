@@ -1,4 +1,4 @@
-use  rppal::pwm::Pwm;
+use  rppal::pwm::{Channel, Polarity, Pwm};
 use std::error::Error;
 use std::fmt;
 use bincode::{Decode, Encode};
@@ -26,12 +26,9 @@ const MOTOR_MAX_REV: f64 = 0.04;
 impl Motor {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         println!("[MOTOR] Initialisation ...");
-        let pwm = Pwm::new(rppal::pwm::Channel::Pwm1);
+        let pwm = Pwm::with_frequency(Channel::Pwm1, 50.0, MOTOR_NEUTRAL, Polarity::Normal, true);
         match pwm {
             Ok(pwm) => {
-                pwm.set_frequency(50.0, 0.0)?;
-                pwm.enable()?;
-        
                 let motor = Motor { 
                     pwm: pwm,
                     is_safe: false,

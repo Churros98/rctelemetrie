@@ -1,4 +1,4 @@
-use  rppal::pwm::Pwm;
+use  rppal::pwm::{Channel, Polarity, Pwm};
 use std::error::Error;
 use std::fmt;
 use bincode::{Decode, Encode};
@@ -27,12 +27,9 @@ impl Steering {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         println!("[STEERING] Initialisation ...");
 
-        let pwm = Pwm::new(rppal::pwm::Channel::Pwm0);
+        let pwm = Pwm::with_frequency(Channel::Pwm0, 50.0, STEER_MID, Polarity::Normal, true);
         match pwm {
-            Ok(pwm) => {
-                pwm.set_frequency(50.0, 0.0)?;
-                pwm.enable()?;
-        
+            Ok(pwm) => {        
                 let steer = Steering { 
                     pwm: pwm,
                     is_safe: false,

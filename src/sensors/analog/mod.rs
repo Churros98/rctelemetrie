@@ -1,8 +1,9 @@
 #![allow(unused)]
 
-use std::error::Error;
+use std::{error::Error, task::Poll};
 use std::fmt;
 use futures::channel::oneshot::{Receiver, Sender};
+use tokio_stream::Stream;
 use std::time::Duration;
 use std::thread::sleep;
 use std::time::Instant;
@@ -69,6 +70,7 @@ impl Analog {
         self.reset()?;
         self.set_datarate(analog_registry::ADS1115_CONFIG_DR_128_VAL);
         self.set_mode(true);
+        self.status |= 0x1;
         Ok(())
     }
 
@@ -174,18 +176,19 @@ impl Analog {
         Ok((((raw as f32) * gain_adc) * analog_registry::ANALOG_BATT_GAIN))
     }
 
-    /// Lecture des données du capteur et conversion
-    pub fn update(&mut self) -> Result<(), Box<dyn Error>> {
+    /// Lecture des valeurs actuel.
+    pub fn update(&mut self) ->  Result<(), Box<dyn Error>> {
         self.battery = self.get_voltage(analog_registry::ADS1115_CONFIG_MUX_AIN0_AIN1_VAL, analog_registry::ADS1115_CONFIG_PGA_FSR_4_096_VAL)?;
+    
         Ok(())
     }
 
-    /// Lecture des valeurs actuel.
-    pub fn read_values(&self) -> AnalogData {
+    /// Retourne des données
+    pub fn to_data(&self) -> AnalogData {
         AnalogData {
             status: self.status,
             battery: self.battery,
-        }
+        } 
     }
 
     /// Retourne des données vide

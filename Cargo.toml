@@ -1,14 +1,19 @@
 [package]
-name = "telemetrie"
+name = "voiturerc"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[build]
+default-target = "armv7-unknown-linux-gnueabihf"    # use this target if none is explicitly provided
+
 [dependencies]
 futures = "0.3.30"
 rppal = "0.17.1"
 tokio = { version = "1.36.0", features = ["full"] }
+tokio-stream = "0.1.15"
 nalgebra = "0.29.0"
 bincode = "2.0.0-rc.3"
+zbus = "4.2.0"
 tokio-graceful-shutdown = "0.14.3"

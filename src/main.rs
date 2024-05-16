@@ -7,13 +7,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::signal::unix::signal;
 use std::error::Error;
 
+use crate::commande::Commande;
 use crate::sensors::Sensors;
 use crate::actuator::Acurator;
-use crate::client::Telemetrie;
+use crate::telemetrie::Telemetrie;
 
 mod actuator;
 mod sensors;
-mod client;
+mod telemetrie;
+mod commande;
 mod i2c;
 
 #[tokio::main]
@@ -31,14 +33,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let sensors_tx = Arc::new(Mutex::new(sensors_tx));
     let actuator_tx = Arc::new(Mutex::new(actuator_tx));
 
+    // IP de connexion au serveur
+    let ip = String::from("192.168.1.102");
+
     // Prépare les différentes tâches
     let actuator = Acurator::new(general_stop.clone(), actuator_rx)?;
-    let sensors = Sensors::new(general_stop.clone(), sensors_tx)?;
-    let telemetrie = Telemetrie::new(general_stop.clone(), sensors_rx, actuator_tx)?;
+    let sensors = Sensors::new(general_stop.clone(), sensors_tx).await?;
+    let telemetrie = Telemetrie::new(&ip, 1111, general_stop.clone(), sensors_rx)?;
+    let control = Commande::new(&ip, 1112, general_stop.clone(), actuator_tx)?;
 
+    // Démarre toutes les tâches
     let telemetrie_thread = tokio::spawn(async move {
         let telemetrie = telemetrie;
         let _ = telemetrie.update().await;
+    });
+    
+    let control_thread = tokio::spawn(async move {
+        let control = control;
+        let _ = control.update().await;
     });
     
     let sensors_thread = tokio::spawn(async move {
@@ -53,7 +65,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // Attend un SIGTERM pour executé le process de fermeture
+    // Attend un SIGTERM pour executer le process de fermeture
     let mut sigint_event = signal(SignalKind::terminate()).expect("[CORE] Impossible d'enregister l'événement SIGINT");
     let mut sigterm_event = signal(SignalKind::terminate()).expect("[CORE] Impossible d'enregister l'événement SIGTERM");
 
@@ -62,8 +74,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         _ = sigterm_event.recv() => println!("[CORE] Arrêt demandé: SIGTERM"),
     }
 
+    // Passe le "STOP" à True pour l'ensemble des boucles
     general_stop.store(true, Ordering::Relaxed);
-    let _ = join!(sensors_thread, actuator_thread, telemetrie_thread);
+
+    // Attend la fin de l'ensemble des tâches
+    let _ = join!(sensors_thread, actuator_thread, telemetrie_thread, control_thread);
     println!("[CORE] Arrêt.");
     Ok(())
 }

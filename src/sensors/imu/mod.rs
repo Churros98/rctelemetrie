@@ -1,8 +1,9 @@
 #![allow(unused)]
 
-use std::error::Error;
+use std::{error::Error, task::Poll};
 use std::fmt;
 use futures::channel::oneshot::{Receiver, Sender};
+use tokio_stream::Stream;
 use rppal::i2c::I2c;
 use crate::i2c::I2CBit;
 use std::time::Duration;
@@ -88,7 +89,7 @@ impl IMU {
     }
 
     /// Lecture des données
-    pub fn read_values(&mut self) -> IMUData {
+    pub fn to_data(&mut self) -> IMUData {
         let angle = self.get_angles();
         IMUData {
             status: self.status,
@@ -337,7 +338,7 @@ impl IMU {
         self.angles
     }
 
-    /// Mets à jour les valeurs
+    /// Lis et mets à jour les valeurs de l'IMU
     pub fn update(&mut self) -> Result<(), Box<dyn Error>> {
         let acceleration = self.get_accel()?;
         let gyroscope = self.get_gyro()?;
@@ -370,8 +371,6 @@ impl IMU {
         self.angles.y = 0.98 * gyroscope_roll + 0.02 * accel_roll; // Roll
         self.angles.z = gyroscope_yaw; // Très imprécis, utiliser le magnétomètre
 
-        //Vector3::new(accel_x, accel_y, 0.0)
-        //Vector3::new(gyroscope_x, gyroscope_y, 0.0)
         Ok(())
     }
 
@@ -386,4 +385,3 @@ impl IMU {
         }
     }
 }
-

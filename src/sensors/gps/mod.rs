@@ -3,9 +3,11 @@
 use rppal::uart::Uart;
 use rppal::uart::Parity;
 use bincode::{config, Decode, Encode};
+use tokio_stream::Stream;
 use std::path::Path;
 use std::error::Error;
 use std::fmt;
+use std::task::Poll;
 
 #[derive(Encode, Decode, Clone, Debug, Copy)]
 pub struct GPSData {
@@ -142,10 +144,10 @@ impl GPS {
         }
     }
 
-    // Permet la lecture des données de l'UART
+    // Permet la lecture des données de l'UART (Lors de l'actualisation des données)
     pub fn update(&mut self) -> Result<(), Box<dyn Error>> {
         let mut chars: &mut [u8; 255] = &mut [0;255];
-        let size = self.uart.read(chars)?;
+        let size: usize = self.uart.read(chars)?;
 
         // Pas de données ...
         if size <= 0 {
@@ -172,8 +174,8 @@ impl GPS {
         Ok(())
     }
 
-    /// Lecture des coordonnées actuel
-    pub fn read_values(&self) -> GPSData {
+    /// Permet de lire les information actuels
+    pub fn to_data(&self) -> GPSData {
         GPSData {
             status: self.status,
             lat_deg: self.lat_deg,
@@ -188,7 +190,6 @@ impl GPS {
             vitesse_sol: self.vitesse_sol,
         }
     }
-
 
     /// Retourne des données vide
     pub fn empty() -> GPSData {
