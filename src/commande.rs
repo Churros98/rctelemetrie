@@ -71,9 +71,9 @@ impl Commande {
             // Gestion de la connexion actuel au serveur
             while !self.is_stop.load(Ordering::Relaxed)  {
                 // Remplis le buffer
-                match client.read_exact(&mut actuator_buf).await {
-                    Ok(_n) => { }
-                    Err(e) => { self.error(&mut client, e).await; break; }
+                if let Err(e) = client.read_exact(&mut actuator_buf).await {
+                    self.error(&mut client, e).await; 
+                    break;
                 }
 
                 // Je décode les instructions
