@@ -2,36 +2,20 @@ use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::Waker;
-use std::task::Poll;
+use std::{path::Path, task::Poll};
 use std::thread;
 use std::time::Duration;
 use futures::Stream;
-use nalgebra::Vector3;
-use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use nmea_parser::*;
 
 #[cfg(feature = "real-sensors")]
-use rppal::i2c::I2c;
-
-#[cfg(feature = "real-sensors")]
-use crate::i2c::I2CBit;
-
-pub(crate) struct Data {
-    angles: Vector3<f32>,
-    temp: f32,
-}
+use rppal::uart::{Parity, Uart};
 
 pub(crate) struct Reader {
     events: Arc<Mutex<VecDeque<ParsedMessage>>>,
     waker: Arc<Mutex<Option<Waker>>>,
     token: CancellationToken,
-
-    gyro_cal: Vector3<f32>,
-    accel_cal: Vector3<f32>,
-    gyro_scale: f32,
-    accel_scale: f32,
-    last_measurment: Option<Instant>,
 }
 
 impl Reader {
@@ -55,7 +39,7 @@ impl Reader {
             thread::spawn(move || {
                 println!("[GPS] Initialisation ...");
 
-                let mut buffer: Vec<u8> = Vec::new();
+                let buffer: Vec<u8> = Vec::new();
                 while !thread_token.is_cancelled() {
                     #[cfg(feature = "real-sensors")]
                     {

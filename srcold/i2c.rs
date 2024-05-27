@@ -1,5 +1,5 @@
-use std::error::Error;
 use rppal::i2c::I2c;
+use std::error::Error;
 
 pub trait I2CBit {
     fn ecriture_word(&self, command: u8, data: u8) -> Result<(), Box<dyn Error>>;

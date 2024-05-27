@@ -13,7 +13,7 @@ use self::steering::Steering;
 pub mod motor;
 pub mod steering;
 
-const DEAD_TIMEOUT: u128 = 2000; // 2sec
+const DEAD_TIMEOUT: u128 = 500; // 0.5sec
 
 #[derive(Encode, Decode)]
 pub struct ActuatorData {
