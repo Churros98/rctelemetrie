@@ -1,6 +1,7 @@
 #[cfg(feature = "real-sensors")]
 mod registry;
-#[cfg(feature = "real-sensors")]
-mod imu;
 
-pub mod reader;
+#[cfg(feature = "real-sensors")]
+mod hmc8553l;
+
+pub(crate) mod reader;

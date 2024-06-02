@@ -9,8 +9,8 @@ edition = "2021"
 # default-target = "armv7-unknown-linux-gnueabihf"    # use this target if none is explicitly provided
 
 [features]
-default = [ 'fake-sensors' ] 
-fake-sensors = []
+default = [ 'real-sensors' ] 
+fake-sensors = [ 'dep:rand' ]
 real-sensors = [ 'dep:rppal' ]
 
 [dependencies]
@@ -21,5 +21,8 @@ nalgebra = "0.29.0"
 rumqttc = "0.24.0"
 tokio-util = "0.7.11"
 rppal = { version = "0.17.1", optional = true }
+rand = { version = "0.8.5", optional = true }
 anyhow = "1.0.86"
 nmea-parser = "0.10.0"
+surrealdb = "1.5.1"
+serde = "1.0.203"
