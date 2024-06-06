@@ -16,14 +16,6 @@ use rppal::uart::{Parity, Uart};
 #[cfg(feature = "real-sensors")]
 use std::path::Path;
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
-pub(crate) struct DataGGA {
-    pub latitude: f64,
-    pub longitude: f64,
-    pub fix: bool,
-    pub sat_in_view: u8,
-}
-
 pub(crate) struct Reader {
     events: Arc<Mutex<VecDeque<ParsedMessage>>>,
     waker: Arc<Mutex<VecDeque<Waker>>>,

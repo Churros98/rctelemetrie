@@ -106,15 +106,12 @@ impl HMC8553L {
         let raw_z = self.get_mag_z_raw()? as f32;
 
         // Correction "Hard Iron" & "Soft Iron"
+        println!("{},{},{}", raw_x, raw_y, raw_z);
         let hard_mag  = Matrix1x3::new(raw_x - self.hard_cal.x, raw_y - self.hard_cal.y, raw_z - self.hard_cal.z);
         let corrected_mag = hard_mag * self.soft_cal;
 
         // Calcul du heading, prend en compte la déclinaison magnétique
         let mut heading = -((corrected_mag.x.atan2(corrected_mag.y) * (180.0 / PI)) + self.mag_decl);
-
-        if (heading < 0.0) {
-            heading = heading + 360.0;
-        }
 
         Ok(heading)
     }

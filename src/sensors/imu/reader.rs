@@ -49,7 +49,6 @@ impl Reader {
                         let temp: f32 = imu.get_temp();
 
                         *data_thread.lock().unwrap() = Data { angles: (angles.x, angles.y, angles.z), temp };
-                        thread::sleep(Duration::from_millis(100));
                     }
                 }
                 dbg!("[IMU] Fin du thread.\n");
@@ -69,7 +68,6 @@ impl Reader {
                     let t: f32 = rng.gen();
 
                     *data_thread.lock().unwrap() = Data { angles: (x, y, z), temp: t };
-                    thread::sleep(Duration::from_millis(100));
                 }
 
                 dbg!("[IMU] Fin du thread.\n");

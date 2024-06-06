@@ -44,6 +44,7 @@ impl Reader {
                         let raw = mag.get_mag_axes_raw();
 
                         if let Err(e) = heading {
+                            println!("ERROR HEADING: {}", e);
                             *data_thread.lock().unwrap() = Err(anyhow!(e));
                             continue;
                         }
@@ -53,7 +54,8 @@ impl Reader {
                             continue;
                         }
 
-                        let data = Data { heading: heading.unwrap(), raw: raw.map(|x| (x.x, x.y, x.z)).unwrap() };
+                        let heading = heading.unwrap();
+                        let data = Data { heading: heading, raw: raw.map(|x| (x.x, x.y, x.z)).unwrap() };
                         *data_thread.lock().unwrap() = Ok(data);
 
                         thread::sleep(Duration::from_millis(100));
