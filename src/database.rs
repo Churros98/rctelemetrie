@@ -1,12 +1,9 @@
-use futures::StreamExt;
 use nmea_parser::gnss::GgaData;
 use nmea_parser::gnss::GgaQualityIndicator;
 use nmea_parser::gnss::VtgData;
 use surrealdb::engine::remote::ws::Client;
-use surrealdb::engine::remote::ws::Ws;
-use surrealdb::method::Stream;
+use surrealdb::engine::remote::ws::Wss;
 use surrealdb::opt::auth::Root;
-use surrealdb::Notification;
 use surrealdb::Surreal;
 
 use crate::actuators::Control;
@@ -20,16 +17,15 @@ pub(crate) struct Database {
 
 impl Database {
     pub(crate) async fn new() -> anyhow::Result<Self> {
-        let db = Surreal::new::<Ws>("192.168.1.102:8000").await?;
+        let db = Surreal::new::<Wss>("db.theorywrong.me").await?;
 
         db.signin(Root {
-            username: "root",
-            password: "root",
-        })
-        .await?;
+            username: "voiturerc",
+            password: "QkPobqNPOUBE5Gj",
+        }).await?;
 
         db.use_ns("voiturerc").use_db("voiturerc").await?;
-
+        
         Ok(Self { db })
     }
 

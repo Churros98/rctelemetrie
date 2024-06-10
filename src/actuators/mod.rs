@@ -1,4 +1,7 @@
+#[cfg(feature = "real-actuators")]
 pub mod motor;
+
+#[cfg(feature = "real-actuators")]
 pub mod steering;
 
 use serde::Deserialize;

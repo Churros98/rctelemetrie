@@ -8,7 +8,6 @@ use std::time::Duration;
 use futures::Stream;
 use tokio_util::sync::CancellationToken;
 use nmea_parser::*;
-use serde::{Serialize, Deserialize};
 
 #[cfg(feature = "real-sensors")]
 use rppal::uart::{Parity, Uart};

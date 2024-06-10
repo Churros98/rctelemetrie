@@ -8,9 +8,10 @@ mod i2c;
 use std::{sync::Arc, time::Duration};
 
 use database::Database;
-use futures::{stream, StreamExt};
-use nmea_parser::{gnss::GgaQualityIndicator, ParsedMessage};
+use futures::StreamExt;
+use nmea_parser::ParsedMessage;
 use tokio_util::sync::CancellationToken;
+use tokio::time::timeout;
 
 #[cfg(unix)]
 use tokio::signal::unix::SignalKind;
@@ -122,54 +123,118 @@ async fn main() {
     }
 
     // Control
-    // TODO: Sécurité avec timeout sur les données pour set le moteur à 0 :)
     {
         let token = token.child_token();
         let db = db.clone();
         tokio::spawn(async move {
-            let motor = crate::actuators::motor::Motor::new();
-            if let Err(e) = motor {
-                println!("[CONTROL] Erreur lors de l'init moteur: {}", e);
-                return;
-            }
-            let motor = motor.unwrap();
+            #[cfg(feature = "real-actuators")]
+            {
+                let motor = crate::actuators::motor::Motor::new();
+                if let Err(e) = motor {
+                    println!("[CONTROL] Erreur lors de l'init moteur: {}", e);
+                    return;
+                }
 
-            let steer = crate::actuators::steering::Steering::new();
-            if let Err(e) = steer {
-                println!("[CONTROL] Erreur lors de l'init steering: {}", e);
-                return;
-            }
-            let steer = steer.unwrap();
+                let mut motor = motor.unwrap();
 
-            while !token.is_cancelled() {
-                let stream = db.live_control().await;
+                let steer = crate::actuators::steering::Steering::new();
+                if let Err(e) = steer {
+                    println!("[CONTROL] Erreur lors de l'init steering: {}", e);
+                    return;
+                }
+                let mut steer = steer.unwrap();
 
-                match stream {
-                    Ok(mut s) => {
-                        while let Some(control) = s.next().await {
-                            match control {
-                                Ok(n) => {
-                                    if n.action != surrealdb::Action::Update {
-                                        continue;
+                while !token.is_cancelled() {
+                    let stream = db.live_control().await;
+
+                    match stream {
+                        Ok(mut s) => {
+                            while !token.is_cancelled() {
+                                let control = timeout(Duration::from_millis(3000), s.next()).await;
+                                match control {
+                                    Ok(data) => {
+                                        if data.is_none() {
+                                            continue;
+                                        }
+
+                                        let data = data.unwrap();
+                                        match data {
+                                            Ok(data) => {
+                                                if data.action != surrealdb::Action::Update {
+                                                    continue;
+                                                }
+            
+                                                if let Err(e) = steer.set_steer(data.data.steer) {
+                                                    eprintln!("[CONTROL] Erreur lors du contrôle de la direction: {}", e)
+                                                }
+            
+            
+                                                if let Err(e) = motor.set_speed(data.data.speed) {
+                                                    eprintln!("[CONTROL] Erreur lors du contrôle moteur: {}", e)
+                                                }
+                                            }
+
+                                            Err(e) => {
+                                                eprintln!("[CONTROL] Erreur lors de l'update: {}", e);
+                                            }
+                                        }
+                                    },
+                                    Err(_) => {
+                                        eprintln!("[CONTROL] Update tardif des données...");
+                                        let _ = motor.set_speed(0.0);
                                     }
-
-                                    if let Err(e) = steer.set_steer(n.data.steer) {
-                                        eprintln!("[CONTROL] Erreur lors du contrôle de la direction: {}", e)
-                                    }
-
-
-                                    if let Err(e) = motor.set_speed(n.data.speed) {
-                                        eprintln!("[CONTROL] Erreur lors du contrôle moteur: {}", e)
-                                    }
-                                },
-                                Err(e) => {
-                                    eprintln!("[CONTROL] Erreur lors de l'update: {}", e);
                                 }
-                            }
-                        }                    
+                            }                 
+                        }
+                        Err(e) => {
+                            eprintln!("[CONTROL] Erreur lors de la création du live: {}", e);
+                        }
                     }
-                    Err(e) => {
-                        eprintln!("[CONTROL] Erreur lors de la création du live: {}", e);
+                }
+
+                motor.safe_stop();
+                steer.safe_stop();
+            }
+        
+            #[cfg(feature = "fake-actuators")]
+            {
+                while !token.is_cancelled() {
+                    let stream = db.live_control().await;
+
+                    match stream {
+                        Ok(mut s) => {
+                            while !token.is_cancelled() {
+                                let control = timeout(Duration::from_millis(3000), s.next()).await;
+                                match control {
+                                    Ok(data) => {
+                                        if data.is_none() {
+                                            continue;
+                                        }
+
+                                        let data = data.unwrap();
+                                        match data {
+                                            Ok(data) => {
+                                                if data.action != surrealdb::Action::Update {
+                                                    continue;
+                                                }
+        
+                                                println!("[CONTROL] Steer: {} Speed: {}", data.data.steer, data.data.speed);
+                                            }
+
+                                            Err(e) => {
+                                                eprintln!("[CONTROL] Erreur lors de l'update: {}", e);
+                                            }
+                                        }
+                                    },
+                                    Err(_) => {
+                                        eprintln!("[CONTROL] Update tardif des données...");
+                                    }
+                                }
+                            }                 
+                        }
+                        Err(e) => {
+                            eprintln!("[CONTROL] Erreur lors de la création du live: {}", e);
+                        }
                     }
                 }
             }

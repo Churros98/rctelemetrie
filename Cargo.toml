@@ -9,9 +9,11 @@ edition = "2021"
 # default-target = "armv7-unknown-linux-gnueabihf"    # use this target if none is explicitly provided
 
 [features]
-default = [ 'real-sensors' ] 
+default = [ 'fake-sensors', 'fake-actuators' ] 
 fake-sensors = [ 'dep:rand' ]
 real-sensors = [ 'dep:rppal' ]
+fake-actuators = []
+real-actuators = [ 'dep:rppal' ]
 
 [dependencies]
 futures = "0.3.30"
