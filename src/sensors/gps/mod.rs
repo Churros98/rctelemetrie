@@ -40,7 +40,7 @@ impl Reader {
                 let path = Path::new("/dev/ttyS0");
                 let mut uart = Uart::with_path(path, 38400, Parity::None, 8, 1)?;
                 thread::spawn(move || {
-                    dbg!("[GPS] Initialisation ...\n");
+                    println!("[GPS] Initialisation ...\n");
 
                     let mut buffer: Vec<u8> = Vec::new();
                     while !thread_token.is_cancelled() {
@@ -56,7 +56,7 @@ impl Reader {
                                     buffer.extend_from_slice(&current_char[0..size]);
                                 },
                                 Err(e) => {
-                                    dbg!("[GPS] Erreur: {}\n", e);
+                                    println!("[GPS] Erreur: {}\n", e);
                                 }       
                             }
                         }
@@ -82,19 +82,19 @@ impl Reader {
                                 }
                             },
                             None => {
-                                dbg!("Trame non connue.\n");
+                                println!("Trame non connue.\n");
                             },
                         }
                     }
 
-                    dbg!("[GPS] Fin de réception des données ...\n");
+                    println!("[GPS] Fin de réception des données ...\n");
                 });
             }
 
             #[cfg(feature = "fake-sensors")]
             {
                 thread::spawn(move || {
-                    dbg!("[GPS] Initialisation [FAKE] ...\n");
+                    println!("[GPS] Initialisation [FAKE] ...\n");
 
                     while !thread_token.is_cancelled() {
                         if let Ok(sentence) = parser.parse_sentence("$GPGGA,123519,4807.038,N,01131.324,E,1,08,0.9,545.4,M,46.9,M, , *42") {
@@ -110,7 +110,7 @@ impl Reader {
                         thread::sleep(Duration::from_millis(100));
                     }
 
-                    dbg!("[GPS] Fin de réception [FAKE] ...\n");
+                    println!("[GPS] Fin de réception [FAKE] ...\n");
                 });
             }
 

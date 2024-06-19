@@ -5,13 +5,14 @@ mod sensors;
 #[cfg(feature = "real-sensors")]
 mod i2c;
 
-use std::{sync::Arc, time::Duration};
+use std::{sync::{Arc, Mutex}, time::Duration};
 
 use database::Database;
 use futures::StreamExt;
 use nmea_parser::ParsedMessage;
-use tokio_util::sync::CancellationToken;
+use rppal::i2c::I2c;
 use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
 
 #[cfg(unix)]
 use tokio::signal::unix::SignalKind;
@@ -21,10 +22,21 @@ use tokio::signal::{self};
 async fn main() {
     let token = CancellationToken::new();
 
+    // Préparation du BUS I2C
+    println!("[I2C] Préparation du bus ...");
+    let i2c_bus = I2c::new();
+    if let Err(e) = i2c_bus {
+        println!("[I2C] Erreur de bus : {}", e);
+        return;
+    }
+    let i2c_bus = Arc::new(Mutex::new(i2c_bus.unwrap()));
+    println!("[I2C] Bus initialisé.");
+
     // Préparation de la base de donnée
+    println!("[DB] Connexion à la base de donnée ...");
     let db = match Database::new().await {
         Ok(db) => {
-            dbg!("[DB] Connexion établie.");
+            println!("[DB] Connexion établie.");
             Arc::new(db)
         }
         Err(e) => {
@@ -32,7 +44,7 @@ async fn main() {
         }
     };
 
-    // GPS
+    // Capteur: GPS
     {
         let token = token.child_token();
         let mut reader = sensors::gps::Reader::new(token.clone()).unwrap();
@@ -43,7 +55,7 @@ async fn main() {
                     match nmea {
                         ParsedMessage::Gga(gga) => {
                             if let Err(e) = db.send_gps_gga(gga).await {
-                                dbg!("Erreur lors de la requête : {}", e);
+                                println!("Erreur lors de la requête : {}", e);
                             }
 
                             // println!("Source:    {}",     gga.source);
@@ -55,11 +67,11 @@ async fn main() {
                         }
                         ParsedMessage::Vtg(vtg) => {
                             if let Err(e) = db.send_gps_vtg(vtg).await {
-                                dbg!("Erreur lors de la requête : {}", e);
+                                println!("Erreur lors de la requête : {}", e);
                             }
                         }
                         _ => {
-                            // dbg!("Trame NMEA Inconnue.");
+                            // println!("Trame NMEA Inconnue.");
                         }
                     }
                 }
@@ -67,57 +79,82 @@ async fn main() {
         });
     }
 
-    // IMU
+    // Capteur: IMU
     {
         let token = token.child_token();
+        
+        #[cfg(feature = "real-sensors")]
+        let mut reader = sensors::imu::reader::Reader::new(i2c_bus.clone(), token.clone()).unwrap();
+
+        #[cfg(feature = "fake-sensors")]
         let mut reader = sensors::imu::reader::Reader::new(token.clone()).unwrap();
+        
+        
         let db = db.clone();
         tokio::spawn(async move {
             while !token.is_cancelled() {
                 if let Some(data) = reader.next().await {
-                    // dbg!("Angles: {:?} T: {}°C", data.angles, data.temp);
+                    println!("Angles: {:?} T: {}°C", data.angles, data.temp);
                     if let Err(e) = db.send_imu(data).await {
-                        dbg!("Erreur lors de la requête : {}", e);
+                        println!("Erreur lors de la requête : {}", e);
                     }
                 }
+
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
         });
     }
 
-    // Analog
+    // Capteur: Analog
     {
         let token = token.child_token();
+
+        #[cfg(feature = "real-sensors")]
+        let mut reader = sensors::analog::reader::Reader::new(i2c_bus.clone(), token.clone()).unwrap();
+
+        #[cfg(feature = "fake-sensors")]
         let mut reader = sensors::analog::reader::Reader::new(token.clone()).unwrap();
+
         let db = db.clone();
         tokio::spawn(async move {
             while !token.is_cancelled() {
                 if let Some(data) = reader.next().await {
                     if let Ok(data) = data {
-                        // dbg!("BATT: {} V", battery);
+                        println!("BATT: {} V", data.battery);
                         if let Err(e) = db.send_analog(data).await {
-                            dbg!("Erreur lors de la requête : {}", e);
+                            println!("Erreur lors de la requête : {}", e);
                         }
                     }
+
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }
         });
     }
 
-    // MAG
+    // Capteur: MAG
     {
         let token = token.child_token();
+
+        #[cfg(feature = "real-sensors")]
+        let mut reader = sensors::mag::reader::Reader::new(i2c_bus.clone(), token.clone()).unwrap();
+        
+        #[cfg(feature = "fake-sensors")]
         let mut reader = sensors::mag::reader::Reader::new(token.clone()).unwrap();
+        
         let db = db.clone();
         tokio::spawn(async move {
             while !token.is_cancelled() {
                 if let Some(data) = reader.next().await {
                     if let Ok(data) = data {
-                        //dbg!("[MAG] H: {} R: {}", data.heading, data.raw);
+                        println!("MAG: {} => ({},{},{})", data.heading, data.raw.0, data.raw.1, data.raw.2);
                         if let Err(e) = db.send_mag(data).await {
-                            dbg!("Erreur lors de la requête : {}", e);
+                            println!("Erreur lors de la requête : {}", e);
                         }
                     }
                 }
+
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
         });
     }
@@ -163,28 +200,30 @@ async fn main() {
                                                 if data.action != surrealdb::Action::Update {
                                                     continue;
                                                 }
-            
+
                                                 if let Err(e) = steer.set_steer(data.data.steer) {
                                                     eprintln!("[CONTROL] Erreur lors du contrôle de la direction: {}", e)
                                                 }
-            
-            
+
                                                 if let Err(e) = motor.set_speed(data.data.speed) {
                                                     eprintln!("[CONTROL] Erreur lors du contrôle moteur: {}", e)
                                                 }
                                             }
 
                                             Err(e) => {
-                                                eprintln!("[CONTROL] Erreur lors de l'update: {}", e);
+                                                eprintln!(
+                                                    "[CONTROL] Erreur lors de l'update: {}",
+                                                    e
+                                                );
                                             }
                                         }
-                                    },
+                                    }
                                     Err(_) => {
                                         eprintln!("[CONTROL] Update tardif des données...");
                                         let _ = motor.set_speed(0.0);
                                     }
                                 }
-                            }                 
+                            }
                         }
                         Err(e) => {
                             eprintln!("[CONTROL] Erreur lors de la création du live: {}", e);
@@ -195,7 +234,7 @@ async fn main() {
                 motor.safe_stop();
                 steer.safe_stop();
             }
-        
+
             #[cfg(feature = "fake-actuators")]
             {
                 while !token.is_cancelled() {
@@ -217,20 +256,26 @@ async fn main() {
                                                 if data.action != surrealdb::Action::Update {
                                                     continue;
                                                 }
-        
-                                                println!("[CONTROL] Steer: {} Speed: {}", data.data.steer, data.data.speed);
+
+                                                println!(
+                                                    "[CONTROL] Steer: {} Speed: {}",
+                                                    data.data.steer, data.data.speed
+                                                );
                                             }
 
                                             Err(e) => {
-                                                eprintln!("[CONTROL] Erreur lors de l'update: {}", e);
+                                                eprintln!(
+                                                    "[CONTROL] Erreur lors de l'update: {}",
+                                                    e
+                                                );
                                             }
                                         }
-                                    },
+                                    }
                                     Err(_) => {
                                         eprintln!("[CONTROL] Update tardif des données...");
                                     }
                                 }
-                            }                 
+                            }
                         }
                         Err(e) => {
                             eprintln!("[CONTROL] Erreur lors de la création du live: {}", e);

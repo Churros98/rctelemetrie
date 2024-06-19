@@ -2,7 +2,7 @@ use nmea_parser::gnss::GgaData;
 use nmea_parser::gnss::GgaQualityIndicator;
 use nmea_parser::gnss::VtgData;
 use surrealdb::engine::remote::ws::Client;
-use surrealdb::engine::remote::ws::Wss;
+use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
 use surrealdb::Surreal;
 
@@ -17,11 +17,11 @@ pub(crate) struct Database {
 
 impl Database {
     pub(crate) async fn new() -> anyhow::Result<Self> {
-        let db = Surreal::new::<Wss>("db.theorywrong.me").await?;
+        let db = Surreal::new::<Ws>("192.168.1.100:8000").await?;
 
         db.signin(Root {
-            username: "voiturerc",
-            password: "QkPobqNPOUBE5Gj",
+            username: "master",
+            password: "rootkit",
         }).await?;
 
         db.use_ns("voiturerc").use_db("voiturerc").await?;

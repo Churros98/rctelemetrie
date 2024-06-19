@@ -1,10 +1,11 @@
+use futures::Stream;
+use rppal::i2c::I2c;
+use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::Poll;
 use std::thread;
-use futures::Stream;
-use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "fake-sensors")]
@@ -25,62 +26,96 @@ pub(crate) struct Reader {
 }
 
 impl Reader {
-    pub(crate) fn new(token: CancellationToken) -> anyhow::Result<Self> {
+    #[cfg(feature = "real-sensors")]
+    pub(crate) fn new(i2c: Arc<Mutex<I2c>>, token: CancellationToken) -> anyhow::Result<Self> {
         // Donnée du capteur
-        let data: Arc<Mutex<Data>> = Arc::new(Mutex::new(Data { angles: (0.0, 0.0, 0.0), temp: 0 as f32 }));
+        let data: Arc<Mutex<Data>> = Arc::new(Mutex::new(Data {
+            angles: (0.0, 0.0, 0.0),
+            temp: 0 as f32,
+        }));
+
         let data_thread = data.clone();
-
         let thread_token = token.clone();
-        
+
         let reader = Reader { data, token };
-        #[cfg(feature = "real-sensors")]
-        {
-            dbg!("[IMU] Démarrage du thread ...\n");
-            thread::spawn(move || {
-                if let Ok(mut imu) = IMU::new() {
-                    while !thread_token.is_cancelled() {
-                        if let Err(e) = imu.update() {
-                            dbg!("[IMU] Erreur de calcul: {}\n", e);
-                        }
+        
+        println!("[IMU] Démarrage du thread ...\n");
+        thread::spawn(move || {
+            let i2c = i2c;
 
-                        // Défini la valeur
-                        let angles = imu.get_angles();
-                        let temp: f32 = imu.get_temp();
+            // Prépare le module
+            let imu = { IMU::new(&mut i2c.lock().unwrap()) };
 
-                        *data_thread.lock().unwrap() = Data { angles: (angles.x, angles.y, angles.z), temp };
-                    }
-                }
-                dbg!("[IMU] Fin du thread.\n");
-            });
-        }
-
-        #[cfg(feature = "fake-sensors")]
-        {
-            dbg!("[IMU] Démarrage du thread [FAKE] ...\n");
-            thread::spawn(move || {
-                let mut rng = rand::thread_rng();
-
+            if let Ok(mut imu) = imu {
                 while !thread_token.is_cancelled() {
-                    let x: f32 = rng.gen();
-                    let y: f32 = rng.gen();
-                    let z: f32 = rng.gen();
-                    let t: f32 = rng.gen();
+                    // Verrouille le bus I2C
+                    let i2c = &mut i2c.lock().unwrap();
 
-                    *data_thread.lock().unwrap() = Data { angles: (x, y, z), temp: t };
+                    // Mets à jour les valeurs (avec les valeurs précédentes)
+                    if let Err(e) = imu.update(i2c) {
+                        println!("[IMU] Erreur de calcul: {}\n", e);
+                    }
+
+                    // Récupére les valeurs calculée
+                    let angles = imu.get_angles();
+                    let temp: f32 = imu.get_temp();
+
+                    // Sauvegarde les données
+                    *data_thread.lock().unwrap() = Data {
+                        angles: (angles.x, angles.y, angles.z),
+                        temp,
+                    };
                 }
+            }
 
-                dbg!("[IMU] Fin du thread.\n");
-            });
-        }
+            println!("[IMU] Fin du thread.\n");
+        });
 
         Ok(reader)
     }
+
+    #[cfg(feature = "fake-sensors")]
+    pub(crate) fn new(token: CancellationToken) -> anyhow::Result<Self> {
+        // Donnée du capteur
+        let data: Arc<Mutex<Data>> = Arc::new(Mutex::new(Data {
+            angles: (0.0, 0.0, 0.0),
+            temp: 0 as f32,
+        }));
+
+        let data_thread = data.clone();
+        let thread_token = token.clone();
+
+        let reader = Reader { data, token };
+
+        println!("[IMU] Démarrage du thread [FAKE] ...\n");
+        thread::spawn(move || {
+            let mut rng = rand::thread_rng();
+
+            while !thread_token.is_cancelled() {
+                let x: f32 = rng.gen();
+                let y: f32 = rng.gen();
+                let z: f32 = rng.gen();
+                let t: f32 = rng.gen();
+
+                *data_thread.lock().unwrap() = Data {
+                    angles: (x, y, z),
+                    temp: t,
+                };
+            }
+
+            println!("[IMU] Fin du thread [FAKE].\n");
+        });
+    }
 }
 
+// Implémentation pour le passage en async
 impl Stream for Reader {
     type Item = Data;
-    
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> Poll<Option<Self::Item>> {
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
         if self.token.is_cancelled() {
             return Poll::Ready(None);
         }
