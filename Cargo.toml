@@ -17,14 +17,16 @@ real-actuators = [ 'dep:rppal' ]
 
 [dependencies]
 futures = "0.3.30"
-tokio = { version = "1.36.0", features = ["full"] }
+tokio = { version = "1.37.0", features = ["full"] }
 tokio-stream = "0.1.15"
 nalgebra = "0.29.0"
-rumqttc = "0.24.0"
 tokio-util = "0.7.11"
 rppal = { version = "0.17.1", optional = true }
 rand = { version = "0.8.5", optional = true }
 anyhow = "1.0.86"
 nmea-parser = "0.10.0"
-surrealdb = "1.5.1"
+surrealdb = "1.5.3"
 serde = "1.0.203"
+zbus = { version = "4.3.0", default-features = false, features = ["tokio"] }
+rascam = "0.0.2"
+

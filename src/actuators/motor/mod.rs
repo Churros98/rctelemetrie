@@ -13,7 +13,7 @@ const MOTOR_MAX_REV: f64 = 0.04;
 impl Motor {
     pub fn new() -> anyhow::Result<Self> {
         println!("[MOTOR] Initialisation ...");
-        let pwm = Pwm::with_frequency(Channel::Pwm1, 50.0, MOTOR_NEUTRAL, Polarity::Normal, true).map_err(|x| anyhow!(x))?;
+        let pwm = Pwm::with_frequency(Channel::Pwm0, 50.0, MOTOR_NEUTRAL, Polarity::Normal, true).map_err(|x| anyhow!(x))?;
 
         Ok(Motor { 
             pwm: pwm,

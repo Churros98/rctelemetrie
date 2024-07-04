@@ -2,10 +2,8 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::Poll;
 use std::thread;
-
 use anyhow::anyhow;
 use futures::Stream;
-use rppal::i2c::I2c;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
@@ -17,6 +15,9 @@ use std::time::Duration;
 
 #[cfg(feature = "real-sensors")]
 use super::analog::Analog;
+
+#[cfg(feature = "real-sensors")]
+use rppal::i2c::I2c;
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub(crate) struct Data {
@@ -43,6 +44,7 @@ impl Reader {
         thread::spawn(move || {
             let i2c = i2c;
 
+            // Prépare le capteur analogique
             let analog = {
                 let i2c = &mut i2c.lock().unwrap();
                 Analog::new(i2c)
@@ -50,7 +52,10 @@ impl Reader {
 
             if let Ok(mut analog) = analog {
                 while !thread_token.is_cancelled() {
+                    // Verrouille le bus I2C
                     let i2c = &mut i2c.lock().unwrap();
+
+                    // Récupére la valeur de la batterie
                     *data_thread.lock().unwrap() =
                         analog.get_battery(i2c).map(|x| Data { battery: x });
                 }
@@ -64,6 +69,14 @@ impl Reader {
 
     #[cfg(feature = "fake-sensors")]
     pub(crate) fn new(token: CancellationToken) -> anyhow::Result<Self> {
+        // Donnée du capteur
+        let data: Arc<Mutex<anyhow::Result<Data>>> = Arc::new(Mutex::new(Err(anyhow!("NOINIT"))));
+        let data_thread = data.clone();
+
+        let thread_token = token.clone();
+
+        let reader = Reader { data, token };
+
         println!("[ANALOG] Démarrage du thread [FAKE] ...");
         thread::spawn(move || {
             let mut rng = rand::thread_rng();
@@ -75,6 +88,8 @@ impl Reader {
             }
             println!("[ANALOG] Fin du thread [FAKE].");
         });
+
+        Ok(reader)
     }
 }
 

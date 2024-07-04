@@ -1,7 +1,7 @@
 @echo off
 
 echo "Build en cours ..."
-cargo build --target armv7-unknown-linux-gnueabihf -F real-sensors && (
+cargo build --target armv7-unknown-linux-gnueabihf && (
 
 echo "Envoi du build ..."
 scp -B target/armv7-unknown-linux-gnueabihf/debug/voiturerc master@192.168.1.8:voiturerc && (

@@ -27,17 +27,17 @@ impl HMC8553L {
         // le script : https://github.com/nliaudat/magnetometer_calibration/
         let mut mag = Self {
             mag_decl: 2.44,
-            hard_cal: Vector3::new(-135.88267489, 191.66016152, -45.84590397),
+            hard_cal: Vector3::new(569.68423502, 246.04798002, -166.97661026),
             soft_cal: Matrix3::new(
-                1.14291451,
-                -0.0145877,
-                -0.03896587,
-                -0.0145877,
-                1.12288524,
-                0.02235676,
-                -0.03896587,
-                0.02235676,
-                1.1820893,
+                1.08480289,
+                -0.04408938,
+                0.06070396,
+                -0.04408938,
+                1.03604676,
+                0.09354455,
+                0.06070396,
+                0.09354455,
+                0.99634431,
             ),
         };
 
@@ -125,12 +125,10 @@ impl HMC8553L {
         let corrected_mag = hard_mag * self.soft_cal;
 
         // Calcul du heading, prend en compte la déclinaison magnétique
-        let mut heading = (corrected_mag.x.atan2(corrected_mag.y) * (180.0 / PI)) + self.mag_decl;
-        if heading < 0.0 {
-            heading = 360.0 + heading;
+        let mut heading = (-((corrected_mag.x.atan2(corrected_mag.y) * (180.0 / PI)) + self.mag_decl)) + 180.0;
+        if (heading < 0.0) {
+            heading = heading + 360.0;
         }
-
-        heading = heading % 360.0;
 
         Ok(heading)
     }

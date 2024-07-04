@@ -1,5 +1,4 @@
 use futures::Stream;
-use rppal::i2c::I2c;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 use std::pin::Pin;
@@ -13,6 +12,9 @@ use rand::Rng;
 
 #[cfg(feature = "real-sensors")]
 use super::imu::IMU;
+
+#[cfg(feature = "real-sensors")]
+use rppal::i2c::I2c;
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub(crate) struct Data {
@@ -105,6 +107,8 @@ impl Reader {
 
             println!("[IMU] Fin du thread [FAKE].\n");
         });
+
+        Ok(reader)
     }
 }
 

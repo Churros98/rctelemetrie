@@ -14,7 +14,7 @@ impl Steering {
     pub fn new() -> anyhow::Result<Self> {
         println!("[STEERING] Initialisation ...");
 
-        let pwm = Pwm::with_frequency(Channel::Pwm0, 50.0, STEER_MID, Polarity::Normal, true).map_err(|x| anyhow!(x))?;
+        let pwm = Pwm::with_frequency(Channel::Pwm1, 50.0, STEER_MID, Polarity::Normal, true).map_err(|x| anyhow!(x))?;
 
         Ok(Steering {
             pwm: pwm,

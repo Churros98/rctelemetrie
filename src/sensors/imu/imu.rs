@@ -287,7 +287,7 @@ impl IMU {
 
     /// Récupére un angle d'euler à partir d'un filtre complémentaire, du gyroscope et de l'accélération
     pub fn get_angles(&self) -> Vector3<f32> {
-        self.angles
+        self.angles * -1.0 // -1.0 car j'ai monté le capteur à l'envers :)
     }
 
     /// Récupére la température enregistrer depuis la dernière update

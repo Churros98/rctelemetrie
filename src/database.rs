@@ -2,7 +2,7 @@ use nmea_parser::gnss::GgaData;
 use nmea_parser::gnss::GgaQualityIndicator;
 use nmea_parser::gnss::VtgData;
 use surrealdb::engine::remote::ws::Client;
-use surrealdb::engine::remote::ws::Ws;
+use surrealdb::engine::remote::ws::Wss;
 use surrealdb::opt::auth::Root;
 use surrealdb::Surreal;
 
@@ -17,7 +17,7 @@ pub(crate) struct Database {
 
 impl Database {
     pub(crate) async fn new() -> anyhow::Result<Self> {
-        let db = Surreal::new::<Ws>("192.168.1.100:8000").await?;
+        let db = Surreal::new::<Wss>("db.theorywrong.me").await?;
 
         db.signin(Root {
             username: "master",
@@ -51,6 +51,21 @@ impl Database {
             .db
             .query("UPDATE analog:realtime SET battery = $battery;")
             .bind(("battery", data.battery))
+            .await?;
+
+        if let Some(e) = result.take_errors().remove(&0) {
+            return Err(anyhow::anyhow!(e));
+        }
+
+        Ok(())
+    }
+
+    // Envoi les données du modem
+    pub(crate) async fn send_modem(&self, quality: u32) -> anyhow::Result<()> {
+        let mut result = self
+            .db
+            .query("UPDATE modem:realtime SET quality = $quality;")
+            .bind(("quality", quality))
             .await?;
 
         if let Some(e) = result.take_errors().remove(&0) {

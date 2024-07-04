@@ -5,32 +5,55 @@ mod sensors;
 #[cfg(feature = "real-sensors")]
 mod i2c;
 
-use std::{sync::{Arc, Mutex}, time::Duration};
+#[cfg(feature = "real-sensors")]
+use rppal::i2c::I2c;
+
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use database::Database;
 use futures::StreamExt;
 use nmea_parser::ParsedMessage;
-use rppal::i2c::I2c;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
+use zbus::{
+    fdo,
+    names::InterfaceName,
+    zvariant,
+    Connection,
+};
+use zvariant::OwnedValue;
 
 #[cfg(unix)]
 use tokio::signal::unix::SignalKind;
 use tokio::signal::{self};
 
-#[tokio::main]
-async fn main() {
-    let token = CancellationToken::new();
+const DEAD_TIMEOUT: u64 = 500;
 
+#[cfg(feature = "real-sensors")]
+fn init_i2c() -> anyhow::Result<Arc<Mutex<I2c>>> {
     // Préparation du BUS I2C
     println!("[I2C] Préparation du bus ...");
     let i2c_bus = I2c::new();
     if let Err(e) = i2c_bus {
-        println!("[I2C] Erreur de bus : {}", e);
-        return;
+        panic!("[I2C] Erreur de bus : {}", e);
     }
     let i2c_bus = Arc::new(Mutex::new(i2c_bus.unwrap()));
     println!("[I2C] Bus initialisé.");
+    Ok(i2c_bus)
+}
+
+#[cfg(feature = "fake-sensors")]
+fn init_i2c() -> anyhow::Result<bool> {
+    Ok(true)
+}
+
+#[tokio::main]
+async fn main() {
+    let token = CancellationToken::new();
+    let i2c_bus = init_i2c().unwrap();
 
     // Préparation de la base de donnée
     println!("[DB] Connexion à la base de donnée ...");
@@ -82,25 +105,24 @@ async fn main() {
     // Capteur: IMU
     {
         let token = token.child_token();
-        
+
         #[cfg(feature = "real-sensors")]
         let mut reader = sensors::imu::reader::Reader::new(i2c_bus.clone(), token.clone()).unwrap();
 
         #[cfg(feature = "fake-sensors")]
         let mut reader = sensors::imu::reader::Reader::new(token.clone()).unwrap();
-        
-        
+
         let db = db.clone();
         tokio::spawn(async move {
             while !token.is_cancelled() {
                 if let Some(data) = reader.next().await {
-                    println!("Angles: {:?} T: {}°C", data.angles, data.temp);
+                    //println!("Angles: {:?} T: {}°C", data.angles, data.temp);
                     if let Err(e) = db.send_imu(data).await {
                         println!("Erreur lors de la requête : {}", e);
                     }
                 }
 
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                tokio::time::sleep(Duration::from_millis(50)).await;
             }
         });
     }
@@ -110,7 +132,8 @@ async fn main() {
         let token = token.child_token();
 
         #[cfg(feature = "real-sensors")]
-        let mut reader = sensors::analog::reader::Reader::new(i2c_bus.clone(), token.clone()).unwrap();
+        let mut reader =
+            sensors::analog::reader::Reader::new(i2c_bus.clone(), token.clone()).unwrap();
 
         #[cfg(feature = "fake-sensors")]
         let mut reader = sensors::analog::reader::Reader::new(token.clone()).unwrap();
@@ -120,13 +143,13 @@ async fn main() {
             while !token.is_cancelled() {
                 if let Some(data) = reader.next().await {
                     if let Ok(data) = data {
-                        println!("BATT: {} V", data.battery);
+                        //println!("BATT: {} V", data.battery);
                         if let Err(e) = db.send_analog(data).await {
                             println!("Erreur lors de la requête : {}", e);
                         }
                     }
 
-                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    tokio::time::sleep(Duration::from_millis(500)).await;
                 }
             }
         });
@@ -138,25 +161,81 @@ async fn main() {
 
         #[cfg(feature = "real-sensors")]
         let mut reader = sensors::mag::reader::Reader::new(i2c_bus.clone(), token.clone()).unwrap();
-        
+
         #[cfg(feature = "fake-sensors")]
         let mut reader = sensors::mag::reader::Reader::new(token.clone()).unwrap();
-        
+
         let db = db.clone();
         tokio::spawn(async move {
             while !token.is_cancelled() {
                 if let Some(data) = reader.next().await {
                     if let Ok(data) = data {
-                        println!("MAG: {} => ({},{},{})", data.heading, data.raw.0, data.raw.1, data.raw.2);
+                        // println!(
+                        //     "MAG: {} => ({},{},{})",
+                        //     data.heading, data.raw.0, data.raw.1, data.raw.2
+                        // );
                         if let Err(e) = db.send_mag(data).await {
                             println!("Erreur lors de la requête : {}", e);
                         }
                     }
                 }
 
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                tokio::time::sleep(Duration::from_millis(300)).await;
             }
         });
+    }
+
+    // Modem 4G
+    {
+        let token = token.child_token();
+        let db = db.clone();
+
+        #[cfg(feature = "real-sensors")]
+        {
+            let connection = Connection::system()
+                .await
+                .expect("Impossible de gérer le D-BUS");
+
+            tokio::spawn(async move {
+                let proxy = fdo::PropertiesProxy::builder(&connection)
+                    .destination("org.freedesktop.ModemManager1")
+                    .expect("Destination invalide")
+                    .path("/org/freedesktop/ModemManager1/Modem/0")
+                    .expect("Path invalide")
+                    .build()
+                    .await
+                    .expect("Impossible de créer le proxy pour la propriété");
+
+                while !token.is_cancelled() {
+                    let signal_quality: OwnedValue = proxy
+                        .get(
+                            InterfaceName::try_from("org.freedesktop.ModemManager1.Modem")
+                                .expect("Type invalide"),
+                            "SignalQuality",
+                        )
+                        .await
+                        .expect("Impossible de récupérer la valeur SignalQuality.");
+
+                    let signal = <(u32, bool)>::try_from(signal_quality).unwrap_or((0, false));
+
+                    let _ = db.send_modem(signal.0).await;
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            });
+        }
+
+        #[cfg(feature = "fake-sensors")]
+        {
+            tokio::spawn(async move {
+                let mut rng = rand::thread_rng();
+
+                while !token.is_cancelled() {
+                    let signal: u32 = rng.gen();
+                    let _ = db.send_modem(signal).await;
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            });
+        }
     }
 
     // Control
@@ -187,7 +266,8 @@ async fn main() {
                     match stream {
                         Ok(mut s) => {
                             while !token.is_cancelled() {
-                                let control = timeout(Duration::from_millis(3000), s.next()).await;
+                                let control =
+                                    timeout(Duration::from_millis(DEAD_TIMEOUT), s.next()).await;
                                 match control {
                                     Ok(data) => {
                                         if data.is_none() {
@@ -243,7 +323,8 @@ async fn main() {
                     match stream {
                         Ok(mut s) => {
                             while !token.is_cancelled() {
-                                let control = timeout(Duration::from_millis(3000), s.next()).await;
+                                let control =
+                                    timeout(Duration::from_millis(DEAD_TIMEOUT), s.next()).await;
                                 match control {
                                     Ok(data) => {
                                         if data.is_none() {

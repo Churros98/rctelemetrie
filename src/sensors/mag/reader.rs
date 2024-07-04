@@ -1,6 +1,5 @@
 use anyhow::anyhow;
 use futures::Stream;
-use rppal::i2c::I2c;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -10,6 +9,9 @@ use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "real-sensors")]
 use super::hmc8553l::HMC8553L;
+
+#[cfg(feature = "real-sensors")]
+use rppal::i2c::I2c;
 
 #[cfg(feature = "fake-sensors")]
 use rand::Rng;
@@ -47,7 +49,10 @@ impl Reader {
 
             if let Ok(mag) = mag {
                 while !thread_token.is_cancelled() {
+                    // Verrouille le bus I2C
                     let i2c = &mut i2c.lock().unwrap();
+
+                    // Récupére les données de heading et raw
                     let heading = mag.get_heading(i2c);
                     let raw = mag.get_mag_axes_raw(i2c);
 
@@ -79,6 +84,14 @@ impl Reader {
 
     #[cfg(feature = "fake-sensors")]
     pub(crate) fn new(token: CancellationToken) -> anyhow::Result<Self> {
+        // Donnée du capteur
+        let data: Arc<Mutex<anyhow::Result<Data>>> = Arc::new(Mutex::new(Err(anyhow!("NOINIT"))));
+        let data_thread = data.clone();
+
+        let thread_token = token.clone();
+
+        let reader = Reader { data, token };
+
         println!("[MAG] Démarrage du thread [FAKE] ...\n");
         thread::spawn(move || {
             let mut rng = rand::thread_rng();
@@ -99,6 +112,8 @@ impl Reader {
 
             println!("[MAG] Fin du thread [FAKE].\n");
         });
+
+        Ok(reader)
     }
 }
 
