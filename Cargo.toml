@@ -28,5 +28,4 @@ nmea-parser = "0.10.0"
 surrealdb = "1.5.3"
 serde = "1.0.203"
 zbus = { version = "4.3.0", default-features = false, features = ["tokio"] }
-rascam = "0.0.2"
 
