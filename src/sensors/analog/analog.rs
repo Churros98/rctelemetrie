@@ -12,13 +12,13 @@ use tokio_stream::Stream;
 
 use crate::sensors::analog::registry;
 
-pub struct Analog {}
+pub(crate) struct Analog {}
 
 // Voir documentation : https://www.ti.com/lit/ds/symlink/ads1118.pdf
 
 impl Analog {
     /// Constructeur
-    pub fn new(i2c: &mut I2c) -> anyhow::Result<Self> {        
+    pub(crate) fn new(i2c: &mut I2c) -> anyhow::Result<Self> {        
         // Créer l'objet et commence l'initialisation
         let mut analog = Analog {};
 
@@ -169,7 +169,7 @@ impl Analog {
     }
 
     /// Récupére la valeur de la batterie
-    pub fn get_battery(&mut self, i2c: &mut I2c) -> anyhow::Result<f32> {
+    pub(crate) fn get_battery(&mut self, i2c: &mut I2c) -> anyhow::Result<f32> {
         self.set_slave(i2c)?;
         self.get_voltage(
             i2c,

@@ -6,17 +6,15 @@ mod sensors;
 mod i2c;
 
 #[cfg(feature = "real-sensors")]
-use rppal::i2c::I2c;
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Duration,
 };
 
 use database::Database;
 use futures::StreamExt;
-use nmea_parser::ParsedMessage;
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 use tokio_util::sync::CancellationToken;
 use zbus::{
     fdo,
@@ -32,28 +30,9 @@ use tokio::signal::{self};
 
 const DEAD_TIMEOUT: u64 = 500;
 
-#[cfg(feature = "real-sensors")]
-fn init_i2c() -> anyhow::Result<Arc<Mutex<I2c>>> {
-    // Préparation du BUS I2C
-    println!("[I2C] Préparation du bus ...");
-    let i2c_bus = I2c::new();
-    if let Err(e) = i2c_bus {
-        panic!("[I2C] Erreur de bus : {}", e);
-    }
-    let i2c_bus = Arc::new(Mutex::new(i2c_bus.unwrap()));
-    println!("[I2C] Bus initialisé.");
-    Ok(i2c_bus)
-}
-
-#[cfg(feature = "fake-sensors")]
-fn init_i2c() -> anyhow::Result<bool> {
-    Ok(true)
-}
-
 #[tokio::main]
 async fn main() {
     let token = CancellationToken::new();
-    let i2c_bus = init_i2c().unwrap();
 
     // Préparation de la base de donnée
     println!("[DB] Connexion à la base de donnée ...");
@@ -67,124 +46,26 @@ async fn main() {
         }
     };
 
-    // Capteur: GPS
-    {
-        let token = token.child_token();
-        let mut reader = sensors::gps::Reader::new(token.clone()).unwrap();
-        let db: Arc<Database> = db.clone();
-        tokio::spawn(async move {
-            while !token.is_cancelled() {
-                if let Some(nmea) = reader.next().await {
-                    match nmea {
-                        ParsedMessage::Gga(gga) => {
-                            if let Err(e) = db.send_gps_gga(gga).await {
-                                println!("Erreur lors de la requête : {}", e);
-                            }
-
-                            // println!("Source:    {}",     gga.source);
-                            // println!("Latitude:  {:.3}°", gga.latitude.unwrap_or(0.0));
-                            // println!("Longitude: {:.3}°", gga.longitude.unwrap_or(0.0));
-                            // println!("Satelites: {}", gga.satellite_count.unwrap_or(0));
-                            // println!("Fix?: {}",  gga.quality == GgaQualityIndicator::GpsFix);
-                            // println!("");
-                        }
-                        ParsedMessage::Vtg(vtg) => {
-                            if let Err(e) = db.send_gps_vtg(vtg).await {
-                                println!("Erreur lors de la requête : {}", e);
-                            }
-                        }
-                        _ => {
-                            // println!("Trame NMEA Inconnue.");
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    // Capteur: IMU
+    // Capteur
     {
         let token = token.child_token();
 
-        #[cfg(feature = "real-sensors")]
-        let mut reader = sensors::imu::reader::Reader::new(i2c_bus.clone(), token.clone()).unwrap();
-
-        #[cfg(feature = "fake-sensors")]
-        let mut reader = sensors::imu::reader::Reader::new(token.clone()).unwrap();
-
-        let db = db.clone();
-        tokio::spawn(async move {
-            while !token.is_cancelled() {
-                if let Some(data) = reader.next().await {
-                    //println!("Angles: {:?} T: {}°C", data.angles, data.temp);
-                    if let Err(e) = db.send_imu(data).await {
-                        println!("Erreur lors de la requête : {}", e);
-                    }
-                }
-
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-        });
-    }
-
-    // Capteur: Analog
-    {
-        let token = token.child_token();
-
-        #[cfg(feature = "real-sensors")]
-        let mut reader =
-            sensors::analog::reader::Reader::new(i2c_bus.clone(), token.clone()).unwrap();
-
-        #[cfg(feature = "fake-sensors")]
-        let mut reader = sensors::analog::reader::Reader::new(token.clone()).unwrap();
-
+        let mut reader = sensors::reader::Reader::new(token.clone()).expect("[CAPTEURS] Impossible de gérer les capteurs.");
         let db = db.clone();
         tokio::spawn(async move {
             while !token.is_cancelled() {
                 if let Some(data) = reader.next().await {
                     if let Ok(data) = data {
-                        //println!("BATT: {} V", data.battery);
-                        if let Err(e) = db.send_analog(data).await {
-                            println!("Erreur lors de la requête : {}", e);
-                        }
+                        let _ = db.send_analog(data.analog).await;
+                        let _ = db.send_nav(data.gps, data.mag, data.imu).await;
                     }
 
-                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    sleep(Duration::from_millis(1000 / 30)).await;
                 }
             }
         });
     }
-
-    // Capteur: MAG
-    {
-        let token = token.child_token();
-
-        #[cfg(feature = "real-sensors")]
-        let mut reader = sensors::mag::reader::Reader::new(i2c_bus.clone(), token.clone()).unwrap();
-
-        #[cfg(feature = "fake-sensors")]
-        let mut reader = sensors::mag::reader::Reader::new(token.clone()).unwrap();
-
-        let db = db.clone();
-        tokio::spawn(async move {
-            while !token.is_cancelled() {
-                if let Some(data) = reader.next().await {
-                    if let Ok(data) = data {
-                        // println!(
-                        //     "MAG: {} => ({},{},{})",
-                        //     data.heading, data.raw.0, data.raw.1, data.raw.2
-                        // );
-                        if let Err(e) = db.send_mag(data).await {
-                            println!("Erreur lors de la requête : {}", e);
-                        }
-                    }
-                }
-
-                tokio::time::sleep(Duration::from_millis(300)).await;
-            }
-        });
-    }
-
+    
     // Modem 4G
     {
         let token = token.child_token();
@@ -218,6 +99,8 @@ async fn main() {
 
                     let signal = <(u32, bool)>::try_from(signal_quality).unwrap_or((0, false));
 
+                    println!("Signal: {}", signal.0);
+
                     let _ = db.send_modem(signal.0).await;
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 }
@@ -238,7 +121,48 @@ async fn main() {
         }
     }
 
-    // Control
+    // Switch (Activation fonction unique)
+    {
+        let token = token.child_token();
+        let db = db.clone();
+
+        // Réinitialise les switchs
+        if let Err(e) = db.reset_switch().await {
+            println!("[SWITCH] Impossible de réinitialiser les switchs ({e})");
+        }
+
+        #[cfg(feature = "real-actuators")]
+        {
+            let switch = crate::actuators::switch::Switch::new();
+            if let Err(e) = switch {
+                println!("[SWITCH] Erreur lors de l'init des switchs: {}", e);
+                return;
+            }
+            let mut switch = switch.unwrap();
+
+            while !token.is_cancelled() {
+                let stream = db.live_switch().await;
+
+                match stream {
+                    Ok(mut s) => {
+                        while !token.is_cancelled() {
+                            let sw = s.next().await;
+                            if let Some(Ok(data)) = sw {
+                                if data.data.esc { switch.start_esc() } else { switch.stop_esc() };
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("[SWITCH] Erreur lors de la création du live: {}", e);
+                    }
+                }
+            }
+
+            switch.stop_esc();
+        }
+    }
+
+    // Controle analogique
     {
         let token = token.child_token();
         let db = db.clone();
@@ -250,7 +174,6 @@ async fn main() {
                     println!("[CONTROL] Erreur lors de l'init moteur: {}", e);
                     return;
                 }
-
                 let mut motor = motor.unwrap();
 
                 let steer = crate::actuators::steering::Steering::new();
@@ -373,11 +296,11 @@ async fn main() {
         tokio::select! {
             _ = test.recv() => {
                 println!("Signal d'interruption reçu");
-                token.cancel();
+                // token.cancel();
             },
             _ = signal::ctrl_c() => {
                 println!("Signal de contrôle C reçu");
-                token.cancel();
+                // token.cancel();
             },
         }
     }

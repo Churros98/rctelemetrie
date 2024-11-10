@@ -2,6 +2,4 @@
 mod registry;
 
 #[cfg(feature = "real-sensors")]
-mod hmc8553l;
-
-pub(crate) mod reader;
+pub(crate) mod hmc8553l;

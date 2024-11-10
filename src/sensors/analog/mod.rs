@@ -2,6 +2,4 @@
 mod registry;
 
 #[cfg(feature = "real-sensors")]
-mod analog;
-
-pub(crate) mod reader;
+pub mod analog;

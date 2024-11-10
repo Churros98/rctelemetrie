@@ -13,7 +13,7 @@ use std::time::Duration;
 use std::time::Instant;
 use std::{error::Error, f32::consts::PI};
 
-pub struct HMC8553L {
+pub (crate) struct HMC8553L {
     mag_decl: f32,
     hard_cal: Vector3<f32>,
     soft_cal: Matrix3<f32>,
@@ -21,7 +21,7 @@ pub struct HMC8553L {
 
 impl HMC8553L {
     /// Constructeur
-    pub fn new(i2c: &mut I2c) -> anyhow::Result<Self> {
+    pub (crate) fn new(i2c: &mut I2c) -> anyhow::Result<Self> {
         // Créer l'objet et commence l'initialisation
         // NOTE : Pour obtenir les données de calibration, utiliser la partie "RAW" sur l'UI puis
         // le script : https://github.com/nliaudat/magnetometer_calibration/
@@ -94,7 +94,7 @@ impl HMC8553L {
     }
 
     /// Récupére les données raw
-    pub fn get_mag_axes_raw(&self, i2c: &mut I2c) -> anyhow::Result<Vector3<i16>> {
+    pub (crate) fn get_mag_axes_raw(&self, i2c: &mut I2c) -> anyhow::Result<Vector3<i16>> {
         // Défini mon capteur sur le bus I2C
         self.set_slave(i2c)?;
 
@@ -107,7 +107,7 @@ impl HMC8553L {
     }
 
     /// Récupére le heading
-    pub fn get_heading(&self, i2c: &mut I2c) -> anyhow::Result<f32> {
+    pub (crate) fn get_heading(&self, i2c: &mut I2c) -> anyhow::Result<f32> {
         // Défini mon capteur sur le bus I2C
         self.set_slave(i2c)?;
 

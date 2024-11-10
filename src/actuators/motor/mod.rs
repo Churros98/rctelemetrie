@@ -21,6 +21,12 @@ impl Motor {
         })
     }
 
+    pub fn start_esc(&self, start: bool) -> anyhow::Result<()> {
+        
+        
+        Ok(())
+    }
+
     pub fn set_speed(&self, mut speed: f64) -> anyhow::Result<()> {
         if self.is_safe {
             return Ok(())

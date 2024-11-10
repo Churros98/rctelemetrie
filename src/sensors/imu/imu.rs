@@ -11,19 +11,20 @@ use std::time::Instant;
 use nalgebra::Vector3;
 use crate::sensors::imu::registry;
 
-pub struct IMU {
+pub(crate) struct IMU {
     gyro_cal: Vector3<f32>,
     accel_cal: Vector3<f32>,
     gyro_scale: f32,
     accel_scale: f32,
     angles: Vector3<f32>,
     temp: f32,
+    speed: f64,
     last_measurment: Option<Instant>,
 }
 
 impl IMU {
     /// Constructeur
-    pub fn new(i2c: &mut I2c) -> anyhow::Result<Self> {
+    pub(crate) fn new(i2c: &mut I2c) -> anyhow::Result<Self> {
 
         // Créer l'objet et commence l'initialisation
         let mut imu = Self {
@@ -33,6 +34,7 @@ impl IMU {
             accel_scale: 16384.0,
             angles: Vector3::new(0.0, 0.0, 0.0),
             temp: 0.0,
+            speed: 0.0,
             last_measurment: Option::None,
         };
 
@@ -46,6 +48,10 @@ impl IMU {
         imu.debug_get_info(i2c)?;
 
         Ok(imu)
+    }
+
+    pub(crate) fn set_speed(&mut self, speed: f64) {
+        self.speed = speed;
     }
 
     fn set_slave(&self, i2c: &mut I2c) -> anyhow::Result<()> {
@@ -286,17 +292,17 @@ impl IMU {
     }
 
     /// Récupére un angle d'euler à partir d'un filtre complémentaire, du gyroscope et de l'accélération
-    pub fn get_angles(&self) -> Vector3<f32> {
+    pub(crate) fn get_angles(&self) -> Vector3<f32> {
         self.angles * -1.0 // -1.0 car j'ai monté le capteur à l'envers :)
     }
 
     /// Récupére la température enregistrer depuis la dernière update
-    pub fn get_temp(&self) -> f32 {
+    pub(crate) fn get_temp(&self) -> f32 {
         self.temp
     }
 
     /// Lis et mets à jour les valeurs de l'IMU
-    pub fn update(&mut self, i2c: &mut I2c) -> anyhow::Result<()>  {
+    pub(crate) fn update(&mut self, i2c: &mut I2c) -> anyhow::Result<()>  {
         self.set_slave(i2c)?;
 
         let acceleration = self.get_accel(i2c)?;
@@ -325,9 +331,17 @@ impl IMU {
         let gyroscope_roll = self.angles.y - (gyroscope.y * elapsed_time.as_secs_f32()); // Roll (SUR)
         let gyroscope_yaw = self.angles.z + (gyroscope.z * elapsed_time.as_secs_f32());
 
+        // Calcul dynamique du filtre via la vitesse
+        let mut gyro_mult: f32 = 1.0;
+        if (self.speed <= 10.0) {
+            gyro_mult = 0.80 + (0.18 * ( 1.0 - (self.speed as f32 / 10.0)));
+        }
+
+        let accel_mult = 1.0 - gyro_mult;
+
         // Filte complémentaire
-        self.angles.x = 0.98 * gyroscope_pitch + 0.02 * accel_pitch; // Pitch
-        self.angles.y = 0.98 * gyroscope_roll + 0.02 * accel_roll; // Roll
+        self.angles.x = (gyro_mult * gyroscope_pitch) + (accel_mult * accel_pitch); // Pitch
+        self.angles.y = (gyro_mult * gyroscope_roll) + (accel_mult * accel_roll); // Roll
         self.angles.z = gyroscope_yaw; // Très imprécis, utiliser le magnétomètre
 
         Ok(())
