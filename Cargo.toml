@@ -5,9 +5,6 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-# [build]
-# default-target = "armv7-unknown-linux-gnueabihf"    # use this target if none is explicitly provided
-
 [features]
 default = [ 'real-sensors', 'real-actuators' ] 
 fake-sensors = [ 'dep:rand' ]

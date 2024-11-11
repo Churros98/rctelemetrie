@@ -16,11 +16,11 @@ pub(crate) struct Database {
 
 impl Database {
     pub(crate) async fn new() -> anyhow::Result<Self> {
-        let db = Surreal::new::<Wss>("db.theorywrong.me").await?;
+        let db = Surreal::new::<Wss>(env!("DB_URL")).await?;
 
         db.signin(Root {
-            username: "master",
-            password: "Iknowthisfuckingpassword",
+            username: env!("DB_USERNAME"),
+            password: env!("DB_PASSWORD"),
         }).await?;
 
         db.use_ns("voiturerc").use_db("voiturerc").await?;
