@@ -46,3 +46,4 @@ jobs:
           push: true
           tags: 'theorywrong/rctelemetrie:latest'
           labels: ''
+          platforms: 'linux/arm64'
