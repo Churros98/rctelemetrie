@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use rppal::gpio::{Gpio, OutputPin};
 
 pub(crate) struct Switch {

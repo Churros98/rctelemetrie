@@ -15,16 +15,10 @@ impl Motor {
         println!("[MOTOR] Initialisation ...");
         let pwm = Pwm::with_frequency(Channel::Pwm0, 50.0, MOTOR_NEUTRAL, Polarity::Normal, true).map_err(|x| anyhow!(x))?;
 
-        Ok(Motor { 
+        Ok(Motor {
             pwm: pwm,
             is_safe: false,
         })
-    }
-
-    pub fn start_esc(&self, start: bool) -> anyhow::Result<()> {
-        
-        
-        Ok(())
     }
 
     pub fn set_speed(&self, mut speed: f64) -> anyhow::Result<()> {

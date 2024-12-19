@@ -16,13 +16,12 @@ use database::Database;
 use futures::StreamExt;
 use tokio::time::{sleep, timeout};
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 use zbus::{
     fdo,
     names::InterfaceName,
-    zvariant,
     Connection,
 };
-use zvariant::OwnedValue;
 
 #[cfg(unix)]
 use tokio::signal::unix::SignalKind;
@@ -32,11 +31,23 @@ const DEAD_TIMEOUT: u64 = 500;
 
 #[tokio::main]
 async fn main() {
+    // Récupére le UUID de la voiture
+    let uuid = std::env::var("UUID").unwrap();
+
+    // Vérifie si le UUID est valide
+    let uuid = match Uuid::parse_str(&uuid) {
+        Ok(uuid) => uuid,
+        Err(_) => {
+            eprintln!("[MAIN] UUID invalide. Veuillez spécifier un UUID valide en variable d'environnement `UUID`.");
+            return;
+        }
+    };
+
     let token = CancellationToken::new();
 
     // Préparation de la base de donnée
     println!("[DB] Connexion à la base de donnée ...");
-    let db = match Database::new().await {
+    let db = match Database::new(uuid).await {
         Ok(db) => {
             println!("[DB] Connexion établie.");
             Arc::new(db)
@@ -52,6 +63,7 @@ async fn main() {
 
         let mut reader = sensors::reader::Reader::new(token.clone()).expect("[CAPTEURS] Impossible de gérer les capteurs.");
         let db = db.clone();
+    
         tokio::spawn(async move {
             while !token.is_cancelled() {
                 if let Some(data) = reader.next().await {
@@ -65,7 +77,7 @@ async fn main() {
             }
         });
     }
-    
+
     // Modem 4G
     {
         let token = token.child_token();
@@ -73,35 +85,50 @@ async fn main() {
 
         #[cfg(feature = "real-sensors")]
         {
-            let connection = Connection::system()
-                .await
-                .expect("Impossible de gérer le D-BUS");
+            let connection = match Connection::system().await {
+                Ok(conn) => conn,
+                Err(e) => {
+                    eprintln!("[MODEM] Impossible de gérer le D-BUS: {}", e);
+                    return;
+                }
+            };
 
             tokio::spawn(async move {
-                let proxy = fdo::PropertiesProxy::builder(&connection)
+                let proxy = match fdo::PropertiesProxy::builder(&connection)
                     .destination("org.freedesktop.ModemManager1")
-                    .expect("Destination invalide")
+                    .unwrap()
                     .path("/org/freedesktop/ModemManager1/Modem/0")
-                    .expect("Path invalide")
+                    .unwrap()
                     .build()
-                    .await
-                    .expect("Impossible de créer le proxy pour la propriété");
+                    .await {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("[MODEM] Impossible de créer le proxy: {}", e);
+                            return;
+                        }
+                    };
+
+                let interface = match InterfaceName::try_from("org.freedesktop.ModemManager1.Modem") {
+                    Ok(i) => i,
+                    Err(e) => {
+                        eprintln!("[MODEM] Interface invalide: {}", e);
+                        return;
+                    }
+                };
 
                 while !token.is_cancelled() {
-                    let signal_quality: OwnedValue = proxy
-                        .get(
-                            InterfaceName::try_from("org.freedesktop.ModemManager1.Modem")
-                                .expect("Type invalide"),
-                            "SignalQuality",
-                        )
-                        .await
-                        .expect("Impossible de récupérer la valeur SignalQuality.");
+                    match proxy.get(interface.clone(), "SignalQuality").await {
+                        Ok(signal_quality) => {
+                            if let Ok(signal) = <(u32, bool)>::try_from(signal_quality) {
+                                println!("[MODEM] Signal: {}", signal.0);
+                                if let Err(e) = db.send_modem(signal.0).await {
+                                    eprintln!("[MODEM] Erreur d'envoi: {}", e);
+                                }
+                            }
+                        }
+                        Err(e) => eprintln!("[MODEM] Erreur de lecture: {}", e)
+                    }
 
-                    let signal = <(u32, bool)>::try_from(signal_quality).unwrap_or((0, false));
-
-                    println!("Signal: {}", signal.0);
-
-                    let _ = db.send_modem(signal.0).await;
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 }
             });
@@ -127,39 +154,37 @@ async fn main() {
         let db = db.clone();
 
         // Réinitialise les switchs
-        if let Err(e) = db.reset_switch().await {
-            println!("[SWITCH] Impossible de réinitialiser les switchs ({e})");
+        if let Err(e) = db.reset_switchs().await {
+            eprintln!("[SWITCH] Impossible de réinitialiser les switchs ({e})");
         }
 
-        #[cfg(feature = "real-actuators")]
-        {
-            let switch = crate::actuators::switch::Switch::new();
-            if let Err(e) = switch {
-                println!("[SWITCH] Erreur lors de l'init des switchs: {}", e);
-                return;
-            }
-            let mut switch = switch.unwrap();
+        tokio::spawn(async move {
+            #[cfg(feature = "real-actuators")]
+            {
+                let mut switch = match crate::actuators::switch::Switch::new() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        println!("[SWITCH] Erreur lors de l'init des switchs: {}", e);
+                        return;
+                    }
+                };
 
-            while !token.is_cancelled() {
-                let stream = db.live_switch().await;
-
-                match stream {
-                    Ok(mut s) => {
-                        while !token.is_cancelled() {
-                            let sw = s.next().await;
-                            if let Some(Ok(data)) = sw {
-                                if data.data.esc { switch.start_esc() } else { switch.stop_esc() };
+                while !token.is_cancelled() {
+                    match db.live_switch().await {
+                        Ok(mut stream) => {
+                            while !token.is_cancelled() {
+                                if let Some(Ok(data)) = stream.next().await {
+                                    if data.data.esc { switch.start_esc() } else { switch.stop_esc() };
+                                }
                             }
                         }
-                    },
-                    Err(e) => {
-                        eprintln!("[SWITCH] Erreur lors de la création du live: {}", e);
+                        Err(e) => eprintln!("[SWITCH] Erreur lors de la création du live: {}", e)
                     }
                 }
-            }
 
-            switch.stop_esc();
-        }
+                switch.stop_esc();
+            }
+        });
     }
 
     // Controle analogique
@@ -169,68 +194,48 @@ async fn main() {
         tokio::spawn(async move {
             #[cfg(feature = "real-actuators")]
             {
-                let motor = crate::actuators::motor::Motor::new();
-                if let Err(e) = motor {
-                    println!("[CONTROL] Erreur lors de l'init moteur: {}", e);
-                    return;
-                }
-                let mut motor = motor.unwrap();
+                let mut motor = match crate::actuators::motor::Motor::new() {
+                    Ok(m) => m,
+                    Err(e) => {
+                        eprintln!("[CONTROL] Erreur lors de l'init moteur: {}", e);
+                        return;
+                    }
+                };
 
-                let steer = crate::actuators::steering::Steering::new();
-                if let Err(e) = steer {
-                    println!("[CONTROL] Erreur lors de l'init steering: {}", e);
-                    return;
-                }
-                let mut steer = steer.unwrap();
+                let mut steer = match crate::actuators::steering::Steering::new() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("[CONTROL] Erreur lors de l'init steering: {}", e);
+                        return;
+                    }
+                };
 
                 while !token.is_cancelled() {
-                    let stream = db.live_control().await;
-
-                    match stream {
-                        Ok(mut s) => {
+                    match db.live_control().await {
+                        Ok(mut stream) => {
                             while !token.is_cancelled() {
-                                let control =
-                                    timeout(Duration::from_millis(DEAD_TIMEOUT), s.next()).await;
-                                match control {
-                                    Ok(data) => {
-                                        if data.is_none() {
-                                            continue;
+                                match timeout(Duration::from_millis(DEAD_TIMEOUT), stream.next()).await {
+                                    Ok(Some(Ok(data))) if data.action == surrealdb::Action::Update => {
+                                        if let Err(e) = steer.set_steer(data.data.steer) {
+                                            eprintln!("[CONTROL] Erreur lors du contrôle de la direction: {}", e)
                                         }
 
-                                        let data = data.unwrap();
-                                        match data {
-                                            Ok(data) => {
-                                                if data.action != surrealdb::Action::Update {
-                                                    continue;
-                                                }
-
-                                                if let Err(e) = steer.set_steer(data.data.steer) {
-                                                    eprintln!("[CONTROL] Erreur lors du contrôle de la direction: {}", e)
-                                                }
-
-                                                if let Err(e) = motor.set_speed(data.data.speed) {
-                                                    eprintln!("[CONTROL] Erreur lors du contrôle moteur: {}", e)
-                                                }
-                                            }
-
-                                            Err(e) => {
-                                                eprintln!(
-                                                    "[CONTROL] Erreur lors de l'update: {}",
-                                                    e
-                                                );
-                                            }
+                                        if let Err(e) = motor.set_speed(data.data.speed) {
+                                            eprintln!("[CONTROL] Erreur lors du contrôle moteur: {}", e)
                                         }
+                                    }
+                                    Ok(Some(Err(e))) => {
+                                        eprintln!("[CONTROL] Erreur lors de l'update: {}", e);
                                     }
                                     Err(_) => {
                                         eprintln!("[CONTROL] Update tardif des données...");
                                         let _ = motor.set_speed(0.0);
                                     }
+                                    _ => continue
                                 }
                             }
                         }
-                        Err(e) => {
-                            eprintln!("[CONTROL] Erreur lors de la création du live: {}", e);
-                        }
+                        Err(e) => eprintln!("[CONTROL] Erreur lors de la création du live: {}", e)
                     }
                 }
 
@@ -241,49 +246,27 @@ async fn main() {
             #[cfg(feature = "fake-actuators")]
             {
                 while !token.is_cancelled() {
-                    let stream = db.live_control().await;
-
-                    match stream {
-                        Ok(mut s) => {
+                    match db.live_control().await {
+                        Ok(mut stream) => {
                             while !token.is_cancelled() {
-                                let control =
-                                    timeout(Duration::from_millis(DEAD_TIMEOUT), s.next()).await;
-                                match control {
-                                    Ok(data) => {
-                                        if data.is_none() {
-                                            continue;
-                                        }
-
-                                        let data = data.unwrap();
-                                        match data {
-                                            Ok(data) => {
-                                                if data.action != surrealdb::Action::Update {
-                                                    continue;
-                                                }
-
-                                                println!(
-                                                    "[CONTROL] Steer: {} Speed: {}",
-                                                    data.data.steer, data.data.speed
-                                                );
-                                            }
-
-                                            Err(e) => {
-                                                eprintln!(
-                                                    "[CONTROL] Erreur lors de l'update: {}",
-                                                    e
-                                                );
-                                            }
-                                        }
+                                match timeout(Duration::from_millis(DEAD_TIMEOUT), stream.next()).await {
+                                    Ok(Some(Ok(data))) if data.action == surrealdb::Action::Update => {
+                                        println!(
+                                            "[CONTROL] Steer: {} Speed: {}",
+                                            data.data.steer, data.data.speed
+                                        );
+                                    }
+                                    Ok(Some(Err(e))) => {
+                                        eprintln!("[CONTROL] Erreur lors de l'update: {}", e);
                                     }
                                     Err(_) => {
                                         eprintln!("[CONTROL] Update tardif des données...");
                                     }
+                                    _ => continue
                                 }
                             }
                         }
-                        Err(e) => {
-                            eprintln!("[CONTROL] Erreur lors de la création du live: {}", e);
-                        }
+                        Err(e) => eprintln!("[CONTROL] Erreur lors de la création du live: {}", e)
                     }
                 }
             }
@@ -296,11 +279,11 @@ async fn main() {
         tokio::select! {
             _ = test.recv() => {
                 println!("Signal d'interruption reçu");
-                // token.cancel();
+                token.cancel();
             },
             _ = signal::ctrl_c() => {
                 println!("Signal de contrôle C reçu");
-                // token.cancel();
+                token.cancel();
             },
         }
     }
