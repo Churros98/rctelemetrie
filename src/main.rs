@@ -99,6 +99,8 @@ async fn main() {
                     .unwrap()
                     .path("/org/freedesktop/ModemManager1/Modem/0")
                     .unwrap()
+                    .interface("org.freedesktop.DBus.Properties")
+                    .unwrap()
                     .build()
                     .await {
                         Ok(p) => p,
