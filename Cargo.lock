@@ -2533,6 +2533,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60a357793950651c4ed0f3f52338f53b2f809f32d83a07f72909fa13e4c6c1e3"
 
 [[package]]
+name = "rctelemetrie"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "nalgebra",
+ "nmea-parser",
+ "rand",
+ "rppal",
+ "serde",
+ "surrealdb",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "uuid",
+ "zbus",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4012,25 +4031,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "voiturerc"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "futures",
- "nalgebra",
- "nmea-parser",
- "rand",
- "rppal",
- "serde",
- "surrealdb",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "uuid",
- "zbus",
-]
 
 [[package]]
 name = "waker-fn"
