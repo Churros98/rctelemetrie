@@ -11,8 +11,8 @@ env:
   DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
 jobs:
-  push_to_registry:
-    name: Push Docker image to Docker Hub
+  publish_release_actions:
+    name: Publish Release Actions
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -44,3 +44,4 @@ jobs:
         with:
           name: rctelemetrie (ARMv7)
           files: target/armv7-unknown-linux-gnueabihf/release/rctelemetrie
+          token: ${{ secrets.GH_TOKEN }}
