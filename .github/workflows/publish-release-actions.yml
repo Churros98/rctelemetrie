@@ -1,7 +1,9 @@
 name: Publish Release Actions
 
 on:
-  push
+  push:
+    tags:
+      - "v*"
 
 env:
   DB_URL: ${{ secrets.DB_URL }}
@@ -38,6 +40,7 @@ jobs:
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           name: rctelemetrie (ARMv7)
           files: target/armv7-unknown-linux-gnueabihf/release/rctelemetrie
