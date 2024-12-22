@@ -41,4 +41,3 @@ jobs:
         with:
           name: rctelemetrie (ARMv7)
           files: target/armv7-unknown-linux-gnueabihf/release/rctelemetrie
-          token: ${{ secrets.GITHUB_TOKEN }}
