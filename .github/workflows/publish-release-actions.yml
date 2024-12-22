@@ -36,8 +36,9 @@ jobs:
         run: |
           cargo build --release --target armv7-unknown-linux-gnueabihf --config target.armv7-unknown-linux-gnueabihf.linker=\"arm-linux-gnueabihf-gcc\"
 
-      - name: Release binary
-        uses: actions/upload-artifact@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: rctelemetrie
-          path: target/armv7-unknown-linux-gnueabihf/release/rctelemetrie
+          name: rctelemetrie (ARMv7)
+          files: target/armv7-unknown-linux-gnueabihf/release/rctelemetrie
+          token: ${{ secrets.GITHUB_TOKEN }}
