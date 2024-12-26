@@ -19,6 +19,7 @@ impl GPS {
             let uart = Uart::with_path(path, 38400, Parity::None, 8, 1)?;
             let buffer = Vec::new();
 
+            println!("[GPS] Initialisation ...");
             Ok(GPS { uart, parser, buffer })
     }
 

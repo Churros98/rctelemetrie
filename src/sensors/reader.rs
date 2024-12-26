@@ -12,6 +12,11 @@ use tokio_util::sync::CancellationToken;
 use crate::sensors::{analog, gps, imu, mag};
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
+pub(crate) struct ModemData {
+    pub quality: u32,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub(crate) struct MagData {
     pub raw: (i16, i16, i16),
     pub heading: f32,
@@ -38,8 +43,8 @@ pub(crate) struct GpsData {
     pub heading: f64,
 }
 
-#[derive(Clone)]
-pub(crate) struct Data {
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct SensorsData {
     pub mag: MagData,
     pub imu: ImuData,
     pub analog: AnalogData,
@@ -47,7 +52,7 @@ pub(crate) struct Data {
 }
 
 pub(crate) struct Reader {
-    data: Arc<Mutex<Data>>,
+    data: Arc<Mutex<SensorsData>>,
     token: CancellationToken,
 }
 
@@ -55,7 +60,7 @@ impl Reader {
     #[cfg(feature = "real-sensors")]
     pub(crate) fn new(token: CancellationToken) -> anyhow::Result<Self> {
         // Initalisation des données
-        let current_data = Data {
+        let current_data = SensorsData {
             mag: MagData {
                 raw: (0, 0, 0),
                 heading: 0.0,
@@ -81,7 +86,7 @@ impl Reader {
         };
 
         // Gestion des données
-        let data: Arc<Mutex<Data>> = Arc::new(Mutex::new(current_data.clone()));
+        let data: Arc<Mutex<SensorsData>> = Arc::new(Mutex::new(current_data.clone()));
         let data_thread = data.clone();
         let thread_token = token.clone();
         let reader = Reader { data, token };
@@ -93,14 +98,16 @@ impl Reader {
         thread::spawn(move || {
             let mut current_data = current_data;
 
-            let mag = mag::hmc8553l::HMC8553L::new(&mut i2c_bus).expect("[MAG] Capteur non disponible.");
             let mut imu = imu::imu::IMU::new(&mut i2c_bus).expect("[IMU] Capteur non disponible.");
+            let mag = mag::hmc8553l::HMC8553L::new(&mut i2c_bus).expect("[MAG] Capteur non disponible.");
             let mut analog = analog::analog::Analog::new(&mut  i2c_bus).expect("[ANALOG] Capteur indisponible.");
             let mut gps = gps::GPS::new().expect("[GPS] Capteur indisponible.");
-            
+
+            println!("[CAPTEURS] Initialisation terminée. Lecture des données.\n");
+
             while !thread_token.is_cancelled() {
                 // Capteur: Magnétique
-                let heading = mag.get_heading(&mut i2c_bus);
+                let heading: Result<f32, anyhow::Error> = mag.get_heading(&mut i2c_bus);
                 let raw = mag.get_mag_axes_raw(&mut i2c_bus);
 
                 if heading.is_ok() || raw.is_ok() {
@@ -232,7 +239,7 @@ impl Reader {
 }
 
 impl Stream for Reader {
-    type Item = anyhow::Result<Data>;
+    type Item = anyhow::Result<SensorsData>;
 
     fn poll_next(
         self: Pin<&mut Self>,

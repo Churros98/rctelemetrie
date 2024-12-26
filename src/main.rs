@@ -32,7 +32,13 @@ const DEAD_TIMEOUT: u64 = 500;
 #[tokio::main]
 async fn main() {
     // Récupére le UUID de la voiture
-    let uuid = std::env::var("UUID").unwrap();
+    let uuid = match std::env::var("UUID") {
+        Ok(uuid) => uuid,
+        Err(_) => {
+            eprintln!("[MAIN] UUID invalide. Veuillez spécifier un UUID valide en variable d'environnement `UUID`.");
+            return;
+        }
+    };
 
     // Vérifie si le UUID est valide
     let uuid = match Uuid::parse_str(&uuid) {
@@ -68,8 +74,7 @@ async fn main() {
             while !token.is_cancelled() {
                 if let Some(data) = reader.next().await {
                     if let Ok(data) = data {
-                        let _ = db.send_analog(data.analog).await;
-                        let _ = db.send_nav(data.gps, data.mag, data.imu).await;
+                        let _ = db.send_sensors(data).await;
                     }
 
                     sleep(Duration::from_millis(1000 / 30)).await;
@@ -127,11 +132,15 @@ async fn main() {
                                     eprintln!("[MODEM] Erreur d'envoi: {}", e);
                                 }
                             }
-                        }
-                        Err(e) => eprintln!("[MODEM] Erreur de lecture: {}", e)
-                    }
 
-                    tokio::time::sleep(Duration::from_millis(500)).await;
+                            tokio::time::sleep(Duration::from_millis(500)).await;
+                        }
+                        Err(e) => {
+                            eprintln!("[MODEM] Erreur de lecture: {}", e);
+                            eprintln!("[MODEM] Arrêt du monitoring.");
+                            break;
+                        }
+                    }
                 }
             });
         }
@@ -215,6 +224,7 @@ async fn main() {
                 while !token.is_cancelled() {
                     match db.live_control().await {
                         Ok(mut stream) => {
+                            let mut is_waiting = false;
                             while !token.is_cancelled() {
                                 match timeout(Duration::from_millis(DEAD_TIMEOUT), stream.next()).await {
                                     Ok(Some(Ok(data))) if data.action == surrealdb::Action::Update => {
@@ -225,13 +235,18 @@ async fn main() {
                                         if let Err(e) = motor.set_speed(data.data.speed) {
                                             eprintln!("[CONTROL] Erreur lors du contrôle moteur: {}", e)
                                         }
+
+                                        is_waiting = false;
                                     }
                                     Ok(Some(Err(e))) => {
                                         eprintln!("[CONTROL] Erreur lors de l'update: {}", e);
                                     }
                                     Err(_) => {
-                                        eprintln!("[CONTROL] Update tardif des données...");
-                                        let _ = motor.set_speed(0.0);
+                                        if !is_waiting {
+                                            eprintln!("[CONTROL] Update tardif des données. Arrêt préventif du moteur.");
+                                            let _ = motor.set_speed(0.0);
+                                            is_waiting = true;
+                                        }
                                     }
                                     _ => continue
                                 }

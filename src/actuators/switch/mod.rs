@@ -19,10 +19,12 @@ impl Switch {
     }
 
     pub fn start_esc(&mut self) {
+        println!("[SWITCH] Démarrage de l'ESC ...");
         self.esc_pin.set_high();
     }
 
     pub fn stop_esc(&mut self) {
+        println!("[SWITCH] Arrêt de l'ESC ...");
         self.esc_pin.set_low();
     }
 
