@@ -49,6 +49,7 @@ pub(crate) struct SensorsData {
     pub imu: ImuData,
     pub analog: AnalogData,
     pub gps: GpsData,
+    pub time: u64,
 }
 
 pub(crate) struct Reader {
@@ -60,6 +61,8 @@ impl Reader {
     #[cfg(feature = "real-sensors")]
     pub(crate) fn new(token: CancellationToken) -> anyhow::Result<Self> {
         // Initalisation des données
+
+        use std::time::{SystemTime, UNIX_EPOCH};
         let current_data = SensorsData {
             mag: MagData {
                 raw: (0, 0, 0),
@@ -82,7 +85,8 @@ impl Reader {
                 satellites: 0,
                 fix: false,
                 heading: 0.0,
-            }
+            },
+            time: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
         };
 
         // Gestion des données
