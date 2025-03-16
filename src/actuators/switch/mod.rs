@@ -1,7 +1,6 @@
 use rppal::gpio::{Gpio, OutputPin};
 
 pub(crate) struct Switch {
-    gpio: Gpio,
     esc_pin: OutputPin,
 }
 
@@ -11,7 +10,6 @@ impl Switch {
         let esc_pin = gpio.get(25)?.into_output();
 
         let switch = Switch {
-            gpio,
             esc_pin
         };
 
@@ -26,9 +24,5 @@ impl Switch {
     pub fn stop_esc(&mut self) {
         println!("[SWITCH] Arrêt de l'ESC ...");
         self.esc_pin.set_low();
-    }
-
-    pub fn get_esc(&self) -> bool {
-        self.esc_pin.is_set_high()
     }
 }

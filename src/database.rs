@@ -2,12 +2,14 @@ use surrealdb::engine::remote::ws::Client;
 use surrealdb::engine::remote::ws::Wss;
 use surrealdb::opt::auth::Root;
 use surrealdb::Surreal;
-use uuid::Uuid;
 
 use crate::actuators::Control;
 use crate::actuators::Switch;
+use crate::cli::Cli;
 use crate::sensors::reader::ModemData;
 use crate::sensors::reader::SensorsData;
+
+use crate::config::Config;
 
 pub(crate) struct Database {
     db: Surreal<Client>,
@@ -15,20 +17,31 @@ pub(crate) struct Database {
 }
 
 impl Database {
-    pub(crate) async fn new(uuid: Uuid) -> anyhow::Result<Self> {
-        let db = Surreal::new::<Wss>(env!("DB_URL")).await?;
+    pub(crate) async fn new(args: Cli) -> anyhow::Result<Self> {
+        let db = Surreal::new::<Wss>(&args.db_url).await?;
 
         db.signin(Root {
-            username: env!("DB_USERNAME"),
-            password: env!("DB_PASSWORD"),
+            username: &args.db_username.as_str(),
+            password: &args.db_password.as_str(),
         }).await?;
 
         db.use_ns("voiturerc").use_db("voiturerc").await?;
-        
-        Ok(Self { db, uuid: uuid.to_string().replace("-", "") })
+        Ok(Self { db, uuid: args.uuid.replace("-", "") })
     }
-
+    // Récupére la configuration de la voiture.
+    pub(crate) async fn get_config(&self) -> anyhow::Result<Config> {
+        let config: Option<Config> = self.db.select(("config", self.uuid.clone())).await?;
+        match config {
+            Some(cfg) => Ok(cfg),
+            None => {
+                println!("[DATABASE] Aucune configuration trouvée pour la voiture, création d'une configuration par défaut ...");
+                self.db.insert::<Option<Config>>((self.uuid.clone(), "config")).content(Config::new()).await?;
+                Ok(Config::new())
+            },
+        }
+    }
     // Envoi les données du modem
+
     pub(crate) async fn send_modem(&self, quality: u32) -> anyhow::Result<()> {
         let _: Option<ModemData> = self
             .db
@@ -43,7 +56,7 @@ impl Database {
     pub(crate) async fn send_sensors(&self, data: SensorsData) -> anyhow::Result<()> {
         let _: Option<SensorsData> = self
             .db
-            .update(("nav", self.uuid.clone()))
+            .update(("sensors", self.uuid.clone()))
             .content(data)
             .await?;
         

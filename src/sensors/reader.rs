@@ -9,6 +9,7 @@ use std::task::Poll;
 use std::thread;
 use tokio_util::sync::CancellationToken;
 
+use crate::config::Config;
 use crate::sensors::{analog, gps, imu, mag};
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -34,6 +35,11 @@ pub(crate) struct AnalogData {
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
+pub(crate) struct HallData {
+    pub speed: f64,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub(crate) struct GpsData {
     pub speed_kmh: f64,
     pub latitude: f64,
@@ -49,6 +55,7 @@ pub(crate) struct SensorsData {
     pub imu: ImuData,
     pub analog: AnalogData,
     pub gps: GpsData,
+    pub hall: HallData,
     pub time: u64,
 }
 
@@ -59,10 +66,12 @@ pub(crate) struct Reader {
 
 impl Reader {
     #[cfg(feature = "real-sensors")]
-    pub(crate) fn new(token: CancellationToken) -> anyhow::Result<Self> {
+    pub(crate) fn new(token: CancellationToken, config: Config) -> anyhow::Result<Self> {
         // Initalisation des données
 
         use std::time::{SystemTime, UNIX_EPOCH};
+
+        use crate::sensors::hall;
         let current_data = SensorsData {
             mag: MagData {
                 raw: (0, 0, 0),
@@ -86,12 +95,17 @@ impl Reader {
                 fix: false,
                 heading: 0.0,
             },
+
+            hall: HallData {
+                speed: 0.0,
+            },
+
             time: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
         };
 
         // Gestion des données
         let data: Arc<Mutex<SensorsData>> = Arc::new(Mutex::new(current_data.clone()));
-        let data_thread = data.clone();
+        let data_thread: Arc<Mutex<SensorsData>> = data.clone();
         let thread_token = token.clone();
         let reader = Reader { data, token };
 
@@ -103,10 +117,11 @@ impl Reader {
             let mut current_data = current_data;
 
             let mut imu = imu::imu::IMU::new(&mut i2c_bus).expect("[IMU] Capteur non disponible.");
-            let mag = mag::hmc8553l::HMC8553L::new(&mut i2c_bus).expect("[MAG] Capteur non disponible.");
+            let mag = mag::hmc8553l::HMC8553L::new(&mut i2c_bus, config).expect("[MAG] Capteur non disponible.");
             let mut analog = analog::analog::Analog::new(&mut  i2c_bus).expect("[ANALOG] Capteur indisponible.");
             let mut gps = gps::GPS::new().expect("[GPS] Capteur indisponible.");
-
+            let mut hall = hall::Hall::new().expect("[HALL] Capteur indisponible.");
+            
             println!("[CAPTEURS] Initialisation terminée. Lecture des données.\n");
 
             while !thread_token.is_cancelled() {
@@ -145,6 +160,10 @@ impl Reader {
                 } else {
                     current_data.analog.battery = battery.unwrap();
                 }
+
+                // Capteur: Hall
+                hall.update();
+                current_data.hall.speed = hall.get_speed();
 
                 // Capteur: GPS
                 let messages = gps.read();

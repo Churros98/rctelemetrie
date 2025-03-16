@@ -1,5 +1,6 @@
 #![allow(unused)]
 
+use crate::config::Config;
 use crate::i2c::I2CBit;
 use crate::sensors::mag::registry;
 use anyhow::anyhow;
@@ -21,24 +22,14 @@ pub (crate) struct HMC8553L {
 
 impl HMC8553L {
     /// Constructeur
-    pub (crate) fn new(i2c: &mut I2c) -> anyhow::Result<Self> {
+    pub (crate) fn new(i2c: &mut I2c, config: Config) -> anyhow::Result<Self> {
         // Créer l'objet et commence l'initialisation
         // NOTE : Pour obtenir les données de calibration, utiliser la partie "RAW" sur l'UI puis
         // le script : https://github.com/nliaudat/magnetometer_calibration/
         let mut mag = Self {
-            mag_decl: 2.44,
-            hard_cal: Vector3::new(569.68423502, 246.04798002, -166.97661026),
-            soft_cal: Matrix3::new(
-                1.08480289,
-                -0.04408938,
-                0.06070396,
-                -0.04408938,
-                1.03604676,
-                0.09354455,
-                0.06070396,
-                0.09354455,
-                0.99634431,
-            ),
+            mag_decl: config.mag_decl,
+            hard_cal: config.hard_cal,
+            soft_cal: config.soft_cal,
         };
 
         // Prépare le module à être utilisé

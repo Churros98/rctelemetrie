@@ -1,19 +1,21 @@
+mod cli;
 mod actuators;
 mod database;
 mod sensors;
+mod config;
 
 #[cfg(feature = "real-sensors")]
 mod i2c;
-
-#[cfg(feature = "real-sensors")]
 
 use std::{
     sync::Arc,
     time::Duration,
 };
 
+use clap::Parser;
 use database::Database;
 use futures::StreamExt;
+use sensors::reader::SensorsData;
 use tokio::time::{sleep, timeout};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -31,29 +33,25 @@ const DEAD_TIMEOUT: u64 = 500;
 
 #[tokio::main]
 async fn main() {
-    // Récupére le UUID de la voiture
-    let uuid = match std::env::var("UUID") {
-        Ok(uuid) => uuid,
-        Err(_) => {
-            eprintln!("[MAIN] UUID invalide. Veuillez spécifier un UUID valide en variable d'environnement `UUID`.");
-            return;
-        }
-    };
+    // CLI
+    let args = crate::cli::Cli::parse();
 
     // Vérifie si le UUID est valide
-    let uuid = match Uuid::parse_str(&uuid) {
+    match Uuid::parse_str(&args.uuid) {
         Ok(uuid) => uuid,
         Err(_) => {
-            eprintln!("[MAIN] UUID invalide. Veuillez spécifier un UUID valide en variable d'environnement `UUID`.");
+            eprintln!("[MAIN] UUID invalide. Veuillez spécifier un UUID valide.");
             return;
         }
     };
 
+    // Crée un canal pour le transfert des données des capteurs vers les actuateurs
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<SensorsData>(100);
     let token = CancellationToken::new();
 
     // Préparation de la base de donnée
     println!("[DB] Connexion à la base de donnée ...");
-    let db = match Database::new(uuid).await {
+    let db = match Database::new(args.clone()).await {
         Ok(db) => {
             println!("[DB] Connexion établie.");
             Arc::new(db)
@@ -63,17 +61,22 @@ async fn main() {
         }
     };
 
+    // Récupére la configuration de la voiture
+    let config = db.get_config().await.unwrap();
+
     // Capteur
     {
         let token = token.child_token();
+        let config = config.clone();
 
-        let mut reader = sensors::reader::Reader::new(token.clone()).expect("[CAPTEURS] Impossible de gérer les capteurs.");
+        let mut reader = sensors::reader::Reader::new(token.clone(), config).expect("[CAPTEURS] Impossible de gérer les capteurs.");
         let db = db.clone();
     
         tokio::spawn(async move {
             while !token.is_cancelled() {
                 if let Some(data) = reader.next().await {
                     if let Ok(data) = data {
+                        tx.send(data.clone()).await.unwrap();
                         let _ = db.send_sensors(data).await;
                     }
 
@@ -198,14 +201,17 @@ async fn main() {
         });
     }
 
-    // Controle analogique
+    // Controle des actuateurs
     {
         let token = token.child_token();
         let db = db.clone();
+        let config = config.clone();
+
         tokio::spawn(async move {
             #[cfg(feature = "real-actuators")]
             {
-                let mut motor = match crate::actuators::motor::Motor::new() {
+                let mut sensors = rx.recv().await.unwrap();
+                let mut motor = match crate::actuators::motor::Motor::new(config) {
                     Ok(m) => m,
                     Err(e) => {
                         eprintln!("[CONTROL] Erreur lors de l'init moteur: {}", e);
@@ -222,17 +228,30 @@ async fn main() {
                 };
 
                 while !token.is_cancelled() {
+
+                    // Live des commandes
                     match db.live_control().await {
                         Ok(mut stream) => {
                             let mut is_waiting = false;
                             while !token.is_cancelled() {
+                                // Récupération des données des capteurs
+                                match rx.try_recv() {
+                                    Ok(data) => {
+                                        sensors = data;
+                                    }
+                                    Err(e) => {
+                                        println!("[CONTROL] Erreur lors de la réception des données des capteurs: {}", e);
+                                    }
+                                }
+
+                                // Vérifie si les commandes ont été mises à jour dans un laps de temps précis
                                 match timeout(Duration::from_millis(DEAD_TIMEOUT), stream.next()).await {
                                     Ok(Some(Ok(data))) if data.action == surrealdb::Action::Update => {
                                         if let Err(e) = steer.set_steer(data.data.steer) {
                                             eprintln!("[CONTROL] Erreur lors du contrôle de la direction: {}", e)
                                         }
 
-                                        if let Err(e) = motor.set_speed(data.data.speed) {
+                                        if let Err(e) = motor.set_speed(data.data.speed, sensors.hall.speed) {
                                             eprintln!("[CONTROL] Erreur lors du contrôle moteur: {}", e)
                                         }
 
@@ -244,7 +263,7 @@ async fn main() {
                                     Err(_) => {
                                         if !is_waiting {
                                             eprintln!("[CONTROL] Update tardif des données. Arrêt préventif du moteur.");
-                                            let _ = motor.set_speed(0.0);
+                                            let _ = motor.set_speed(0.0, sensors.hall.speed);
                                             is_waiting = true;
                                         }
                                     }
@@ -256,6 +275,7 @@ async fn main() {
                     }
                 }
 
+                // Arrêt des actuateurs
                 motor.safe_stop();
                 steer.safe_stop();
             }
