@@ -8,11 +8,12 @@ mod config;
 mod i2c;
 
 use std::{
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
 use clap::Parser;
+use config::Config;
 use database::Database;
 use futures::StreamExt;
 use sensors::reader::SensorsData;
@@ -37,13 +38,10 @@ async fn main() {
     let args = crate::cli::Cli::parse();
 
     // Vérifie si le UUID est valide
-    match Uuid::parse_str(&args.uuid) {
-        Ok(uuid) => uuid,
-        Err(_) => {
-            eprintln!("[MAIN] UUID invalide. Veuillez spécifier un UUID valide.");
-            return;
-        }
-    };
+    if let Err(_) = Uuid::parse_str(&args.uuid) {
+        eprintln!("[MAIN] UUID invalide. Veuillez spécifier un UUID valide.");
+        return;
+    }
 
     // Crée un canal pour le transfert des données des capteurs vers les actuateurs
     let (tx, mut rx) = tokio::sync::mpsc::channel::<SensorsData>(100);
@@ -62,10 +60,10 @@ async fn main() {
     };
 
     // Récupére la configuration de la voiture
-    let config = db.get_config().await.unwrap();
+    let config = db.get_config().await.expect("[DB] Erreur lors de la récupération de la configuration.");
 
     // Capteur
-    {
+    let sensors_task = {
         let token = token.child_token();
         let config = config.clone();
 
@@ -76,18 +74,22 @@ async fn main() {
             while !token.is_cancelled() {
                 if let Some(data) = reader.next().await {
                     if let Ok(data) = data {
-                        tx.send(data.clone()).await.unwrap();
+                        if tx.send(data.clone()).await.is_err() {
+                            eprintln!("[CAPTEURS] Erreur lors de l'envoi des données.");
+                        }
                         let _ = db.send_sensors(data).await;
                     }
 
                     sleep(Duration::from_millis(1000 / 30)).await;
                 }
             }
-        });
-    }
+
+            println!("[CAPTEURS] Fin de la tâche de mise à jour de la BDD.");
+        })
+    };
 
     // Modem 4G
-    {
+    let modem_task = {
         let token = token.child_token();
         let db = db.clone();
 
@@ -145,7 +147,7 @@ async fn main() {
                         }
                     }
                 }
-            });
+            })
         }
 
         #[cfg(feature = "fake-sensors")]
@@ -158,51 +160,12 @@ async fn main() {
                     let _ = db.send_modem(signal).await;
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 }
-            });
+            })
         }
-    }
-
-    // Switch (Activation fonction unique)
-    {
-        let token = token.child_token();
-        let db = db.clone();
-
-        // Réinitialise les switchs
-        if let Err(e) = db.reset_switchs().await {
-            eprintln!("[SWITCH] Impossible de réinitialiser les switchs ({e})");
-        }
-
-        tokio::spawn(async move {
-            #[cfg(feature = "real-actuators")]
-            {
-                let mut switch = match crate::actuators::switch::Switch::new() {
-                    Ok(s) => s,
-                    Err(e) => {
-                        println!("[SWITCH] Erreur lors de l'init des switchs: {}", e);
-                        return;
-                    }
-                };
-
-                while !token.is_cancelled() {
-                    match db.live_switch().await {
-                        Ok(mut stream) => {
-                            while !token.is_cancelled() {
-                                if let Some(Ok(data)) = stream.next().await {
-                                    if data.data.esc { switch.start_esc() } else { switch.stop_esc() };
-                                }
-                            }
-                        }
-                        Err(e) => eprintln!("[SWITCH] Erreur lors de la création du live: {}", e)
-                    }
-                }
-
-                switch.stop_esc();
-            }
-        });
-    }
+    };
 
     // Controle des actuateurs
-    {
+    let actuators_task = {
         let token = token.child_token();
         let db = db.clone();
         let config = config.clone();
@@ -239,8 +202,8 @@ async fn main() {
                                     Ok(data) => {
                                         sensors = data;
                                     }
-                                    Err(e) => {
-                                        println!("[CONTROL] Erreur lors de la réception des données des capteurs: {}", e);
+                                    Err(_) => {
+                                        eprintln!("[CONTROL] Erreur lors de la réception des données des capteurs.");
                                     }
                                 }
 
@@ -307,31 +270,95 @@ async fn main() {
                     }
                 }
             }
+
+            println!("[CONTROL] Fin de la tâche.")
+        })
+    };
+
+    // Switch (Activation fonction unique)
+    let _ = {
+        let parent = token.clone();
+        let token = token.child_token();
+        let db = db.clone();
+
+        // Réinitialise les switchs
+        if let Err(e) = db.reset_switchs().await {
+            eprintln!("[SWITCH] Impossible de réinitialiser les switchs ({e})");
+        }
+
+        tokio::spawn(async move {
+            #[cfg(feature = "real-actuators")]
+            {
+                let mut switch = match crate::actuators::switch::Switch::new() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        println!("[SWITCH] Erreur lors de l'init des switchs: {}", e);
+                        return;
+                    }
+                };
+
+                while !token.is_cancelled() {
+                    match db.live_switch().await {
+                        Ok(mut stream) => {
+                            while !token.is_cancelled() {
+                                if let Some(Ok(data)) = stream.next().await {
+                                    if data.data.esc { switch.start_esc() } else { switch.stop_esc() };
+                                    if data.data.reload {
+                                        let _ = db.reset_switchs().await;
+                                        println!("[SWITCH] Redémarrage du logiciel de télémétrie ...");
+                                        parent.cancel();
+                                        let _ = sleep(Duration::from_secs(2)).await;
+                                        panic!("Arrêt de l'application forcé après 2 secondes. Reload.");
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => eprintln!("[SWITCH] Erreur lors de la création du live: {}", e)
+                    }
+                }
+
+                switch.stop_esc();
+            }
+
+            println!("[SWITCH] Fin de la tâche.");
+        })
+    };
+
+    // Signal (Signalisation du process)
+    {
+        let parent = token.clone();
+        tokio::spawn(async move {
+            #[cfg(unix)]
+            {
+                let mut test = tokio::signal::unix::signal(SignalKind::interrupt()).unwrap();
+                tokio::select! {
+                    _ = test.recv() => {
+                        println!("Signal d'interruption reçu");
+                        parent.cancel();
+                    },
+                    _ = signal::ctrl_c() => {
+                        println!("Signal de contrôle C reçu");
+                        parent.cancel();
+                    },
+                }
+            }
+        
+            #[cfg(not(unix))]
+            {
+                tokio::select! {
+                    _ = signal::ctrl_c() => {
+                        println!("[MAIN] Signal de contrôle C reçu");
+                        parent.cancel();
+                    },
+                }
+            }
         });
+    };
+
+    println!("[MAIN] Attente de la fin d'exécution des tâches importante ...");
+    while !(sensors_task.is_finished() && modem_task.is_finished() && actuators_task.is_finished()) {
+        sleep(Duration::from_secs(1)).await
     }
 
-    #[cfg(unix)]
-    {
-        let mut test = tokio::signal::unix::signal(SignalKind::interrupt()).unwrap();
-        tokio::select! {
-            _ = test.recv() => {
-                println!("Signal d'interruption reçu");
-                token.cancel();
-            },
-            _ = signal::ctrl_c() => {
-                println!("Signal de contrôle C reçu");
-                token.cancel();
-            },
-        }
-    }
-
-    #[cfg(not(unix))]
-    {
-        tokio::select! {
-            _ = signal::ctrl_c() => {
-                println!("Signal de contrôle C reçu");
-                token.cancel();
-            },
-        }
-    }
+    println!("[MAIN] Fin d'execution.");
 }

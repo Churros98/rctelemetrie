@@ -39,6 +39,13 @@ impl HMC8553L {
         Ok(mag)
     }
 
+    pub (crate) fn recalibrate(&mut self, config: Config) {
+        println!("[HMC8554L] Recalibration ...");
+        self.mag_decl = config.mag_decl;
+        self.hard_cal = config.hard_cal;
+        self.soft_cal = config.soft_cal;
+    }
+
     fn set_slave(&self, i2c: &mut I2c) -> anyhow::Result<()> {
         i2c.set_slave_address(registry::HMC8553L_MAG_ADDR);
         Ok(())

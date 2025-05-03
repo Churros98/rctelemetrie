@@ -12,6 +12,7 @@ pub struct Motor {
     last_error: f64,
     error_integral: f64,
     coef: [f64; 3],
+    force_raw_speed: bool,
 }
 
 const MAX_SPEED: f64 = 30.0; // en km/h
@@ -32,7 +33,15 @@ impl Motor {
             last_error: 0.0,
             error_integral: 0.0,
             coef: [config.kp, config.ki, config.kd],
+            force_raw_speed: config.force_raw_speed,
         })
+    }
+
+    pub fn recalibrate(&mut self, config: Config) {
+        self.coef[0] = config.kp;
+        self.coef[1] = config.ki;
+        self.coef[2] = config.kd;
+        self.force_raw_speed = config.force_raw_speed;
     }
 
     /// Normalise la vitesse en fonction de la vitesse maximale
@@ -42,6 +51,11 @@ impl Motor {
 
     /// Consigne de vitesse (via PID)
     pub fn set_speed(&mut self, wanted_speed: f64, sensor_speed: f64) -> anyhow::Result<f64> {
+        if self.force_raw_speed == true {
+            let set_speed = self.set_speed_esc(wanted_speed)?;
+            return Ok(set_speed);
+        }
+
         // Récupération du temps passé entre les commandes
         let start_time = Instant::now();
         let elapsed_time = start_time.duration_since(self.elapsed_time);

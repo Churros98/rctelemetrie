@@ -50,6 +50,10 @@ impl IMU {
         Ok(imu)
     }
 
+    pub(crate) fn recalibrate(&mut self, i2c: &mut I2c) {
+        self.calibration_imu(i2c);
+    }
+
     pub(crate) fn set_speed(&mut self, speed: f64) {
         self.speed = speed;
     }
@@ -205,8 +209,8 @@ impl IMU {
         self.gyro_cal = offset_gyro / 500.0;
         self.accel_cal = offset_accel / 500.0;
 
-        println!("Calibration GYRO: (X: {} Y: {} Z: {})", self.gyro_cal.x, self.gyro_cal.y, self.gyro_cal.z);
-        println!("Calibration ACCEL: (X: {} Y: {} Z: {})", self.accel_cal.x, self.accel_cal.y, self.accel_cal.z);
+        println!("[IMU] Calibration GYRO: (X: {} Y: {} Z: {})", self.gyro_cal.x, self.gyro_cal.y, self.gyro_cal.z);
+        println!("[IMU] Calibration ACCEL: (X: {} Y: {} Z: {})", self.accel_cal.x, self.accel_cal.y, self.accel_cal.z);
         Ok(())
     }
 

@@ -35,7 +35,7 @@ impl Database {
             Some(cfg) => Ok(cfg),
             None => {
                 println!("[DATABASE] Aucune configuration trouvée pour la voiture, création d'une configuration par défaut ...");
-                self.db.insert::<Option<Config>>((self.uuid.clone(), "config")).content(Config::new()).await?;
+                self.db.insert::<Option<Config>>(("config", self.uuid.clone())).content(Config::new()).await?;
                 Ok(Config::new())
             },
         }
@@ -67,7 +67,10 @@ impl Database {
     pub(crate) async fn reset_switchs(&self) -> anyhow::Result<()> {
         let _: Option<Switch> = self.db
         .update(("switch", self.uuid.as_str()))
-        .content(Switch { esc: false })
+        .content(Switch { 
+            esc: false, 
+            reload: false 
+        })
         .await?;
 
         Ok(())
@@ -76,7 +79,7 @@ impl Database {
     // Prépare un stream des switchs.
     pub(crate) async fn live_switch(
         &self,
-    ) -> anyhow::Result<surrealdb::method::Stream<'_, Client, std::option::Option<Switch>>> {
+    ) -> anyhow::Result<surrealdb::method::Stream<std::option::Option<Switch>>> {
         self.db
             .select(("switch", self.uuid.clone()))
             .live()
@@ -87,7 +90,7 @@ impl Database {
     // Prépare un stream des contrôles.
     pub(crate) async fn live_control(
         &self,
-    ) -> anyhow::Result<surrealdb::method::Stream<'_, Client, std::option::Option<Control>>> {
+    ) -> anyhow::Result<surrealdb::method::Stream<std::option::Option<Control>>> {
         self.db
             .select(("control", self.uuid.clone()))
             .live()

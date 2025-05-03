@@ -18,4 +18,5 @@ pub(crate) struct Control {
 #[derive(Deserialize, Serialize)]
 pub(crate) struct Switch {
     pub esc: bool,
+    pub reload: bool,
 }

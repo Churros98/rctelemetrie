@@ -9,6 +9,7 @@ pub struct Config {
     pub(crate) mag_decl: f32,
     pub(crate) hard_cal: Vector3<f32>,
     pub(crate) soft_cal: Matrix3<f32>,
+    pub(crate) force_raw_speed: bool,
 }
 
 impl Config {
@@ -30,6 +31,7 @@ impl Config {
                 0.09354455,
                 0.99634431,
             ),
+            force_raw_speed: false,
         };
 
         config

@@ -68,7 +68,6 @@ impl Reader {
     #[cfg(feature = "real-sensors")]
     pub(crate) fn new(token: CancellationToken, config: Config) -> anyhow::Result<Self> {
         // Initalisation des données
-
         use std::time::{SystemTime, UNIX_EPOCH};
 
         use crate::sensors::hall;
@@ -112,7 +111,7 @@ impl Reader {
         // I2C
         let mut i2c_bus = I2c::new().expect("[I2C] Erreur de bus");
 
-        println!("[CAPTEURS] Démarrage du thread ...\n");
+        println!("[CAPTEURS] Démarrage de la tâche ...");
         thread::spawn(move || {
             let mut current_data = current_data;
 
@@ -122,7 +121,7 @@ impl Reader {
             let mut gps = gps::GPS::new().expect("[GPS] Capteur indisponible.");
             let mut hall = hall::Hall::new().expect("[HALL] Capteur indisponible.");
             
-            println!("[CAPTEURS] Initialisation terminée. Lecture des données.\n");
+            println!("[CAPTEURS] Initialisation terminée. Lecture des données.");
 
             while !thread_token.is_cancelled() {
                 // Capteur: Magnétique
@@ -142,7 +141,7 @@ impl Reader {
                 // Capteur: IMU
                 imu.set_speed(current_data.gps.speed_kmh);
                 if let Err(e) = imu.update(&mut i2c_bus) {
-                    println!("[IMU] Erreur de calcul: {}\n", e);
+                    println!("[IMU] Erreur de calcul: {}", e);
                 } else {
                     let angles = imu.get_angles();
                     let temp: f32 = imu.get_temp();
@@ -156,7 +155,7 @@ impl Reader {
                 // Capteur: Analog
                 let battery = analog.get_battery(&mut i2c_bus);
                 if let Err(e)  = battery {
-                    println!("[ANALOG] Erreur: {}\n", e);
+                    println!("[ANALOG] Erreur: {}", e);
                 } else {
                     current_data.analog.battery = battery.unwrap();
                 }
@@ -168,7 +167,7 @@ impl Reader {
                 // Capteur: GPS
                 let messages = gps.read();
                 if let Err(e) = messages {
-                    println!("[GPS] Erreur: {}\n", e);
+                    println!("[GPS] Erreur: {}", e);
                 } else {
                     if let Some(messages) = messages.unwrap() {
                         for message in messages {
@@ -201,7 +200,7 @@ impl Reader {
             }
 
 
-            println!("[CAPTEURS] Fin du thread.\n");
+            println!("[CAPTEURS] Fin de la tâche de lecture des données capteurs.");
         });
 
         Ok(reader)
@@ -241,7 +240,7 @@ impl Reader {
         let thread_token = token.clone();
         let reader = Reader { data, token };
 
-        println!("[CAPTEURS] Démarrage du thread [FAKE] ...\n");
+        println!("[CAPTEURS] Démarrage du thread [FAKE] .");
         thread::spawn(move || {
             let mut rng = rand::thread_rng();
             let mut current_data = current_data;
@@ -254,7 +253,7 @@ impl Reader {
                 *data_thread.lock().unwrap() = current_data.clone();
             }
 
-            println!("[CAPTEURS] Fin du thread [FAKE].\n");
+            println!("[CAPTEURS] Fin de la tâche [FAKE].");
         });
 
         Ok(reader)
