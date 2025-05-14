@@ -28,6 +28,7 @@ impl Database {
         db.use_ns("voiturerc").use_db("voiturerc").await?;
         Ok(Self { db, uuid: args.uuid.replace("-", "") })
     }
+
     // Récupére la configuration de la voiture.
     pub(crate) async fn get_config(&self) -> anyhow::Result<Config> {
         let config: Option<Config> = self.db.select(("config", self.uuid.clone())).await?;
@@ -40,8 +41,8 @@ impl Database {
             },
         }
     }
-    // Envoi les données du modem
 
+    // Envoi les données du modem
     pub(crate) async fn send_modem(&self, quality: u32) -> anyhow::Result<()> {
         let _: Option<ModemData> = self
             .db
@@ -67,10 +68,7 @@ impl Database {
     pub(crate) async fn reset_switchs(&self) -> anyhow::Result<()> {
         let _: Option<Switch> = self.db
         .update(("switch", self.uuid.as_str()))
-        .content(Switch { 
-            esc: false, 
-            reload: false 
-        })
+        .content(Switch::empty())
         .await?;
 
         Ok(())

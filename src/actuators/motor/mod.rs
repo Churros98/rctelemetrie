@@ -37,13 +37,6 @@ impl Motor {
         })
     }
 
-    pub fn recalibrate(&mut self, config: Config) {
-        self.coef[0] = config.kp;
-        self.coef[1] = config.ki;
-        self.coef[2] = config.kd;
-        self.force_raw_speed = config.force_raw_speed;
-    }
-
     /// Normalise la vitesse en fonction de la vitesse maximale
     pub fn normalize_speed(&self, speed: f64) -> f64 {
         speed / MAX_SPEED

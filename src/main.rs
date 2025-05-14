@@ -8,12 +8,12 @@ mod config;
 mod i2c;
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Duration,
 };
 
+use actuators::esc;
 use clap::Parser;
-use config::Config;
 use database::Database;
 use futures::StreamExt;
 use sensors::reader::SensorsData;
@@ -43,7 +43,7 @@ async fn main() {
         return;
     }
 
-    // Crée un canal pour le transfert des données des capteurs vers les actuateurs
+    // Créer un canal pour le transfert des données des capteurs vers les actuateurs
     let (tx, mut rx) = tokio::sync::mpsc::channel::<SensorsData>(100);
     let token = CancellationToken::new();
 
@@ -289,8 +289,8 @@ async fn main() {
         tokio::spawn(async move {
             #[cfg(feature = "real-actuators")]
             {
-                let mut switch = match crate::actuators::switch::Switch::new() {
-                    Ok(s) => s,
+                let mut esc = match crate::actuators::esc::ESC::new() {
+                    Ok(esc) => esc,
                     Err(e) => {
                         println!("[SWITCH] Erreur lors de l'init des switchs: {}", e);
                         return;
@@ -302,13 +302,13 @@ async fn main() {
                         Ok(mut stream) => {
                             while !token.is_cancelled() {
                                 if let Some(Ok(data)) = stream.next().await {
-                                    if data.data.esc { switch.start_esc() } else { switch.stop_esc() };
+                                    if data.data.esc { esc.start() } else { esc.stop() };
                                     if data.data.reload {
-                                        let _ = db.reset_switchs().await;
                                         println!("[SWITCH] Redémarrage du logiciel de télémétrie ...");
                                         parent.cancel();
                                         let _ = sleep(Duration::from_secs(2)).await;
-                                        panic!("Arrêt de l'application forcé après 2 secondes. Reload.");
+                                        let _ = db.reset_switchs().await;
+                                        panic!("[SWITCH] Arrêt de l'application forcé après 2 secondes. Reload.");
                                     }
                                 }
                             }
@@ -317,7 +317,7 @@ async fn main() {
                     }
                 }
 
-                switch.stop_esc();
+                esc.stop();
             }
 
             println!("[SWITCH] Fin de la tâche.");

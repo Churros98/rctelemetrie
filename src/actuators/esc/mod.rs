@@ -1,27 +1,27 @@
 use rppal::gpio::{Gpio, OutputPin};
 
-pub(crate) struct Switch {
+pub(crate) struct ESC {
     esc_pin: OutputPin,
 }
 
-impl Switch {
-    pub fn new() -> anyhow::Result<Switch> {
+impl ESC {
+    pub (crate) fn new() -> anyhow::Result<ESC> {
         let gpio = Gpio::new()?;
         let esc_pin = gpio.get(25)?.into_output();
 
-        let switch = Switch {
+        let esc = ESC {
             esc_pin
         };
 
-        Ok(switch)
+        Ok(esc)
     }
 
-    pub fn start_esc(&mut self) {
+    pub (crate) fn start(&mut self) {
         println!("[SWITCH] Démarrage de l'ESC ...");
         self.esc_pin.set_high();
     }
 
-    pub fn stop_esc(&mut self) {
+    pub (crate) fn stop(&mut self) {
         println!("[SWITCH] Arrêt de l'ESC ...");
         self.esc_pin.set_low();
     }

@@ -5,7 +5,7 @@ pub mod motor;
 pub mod steering;
 
 #[cfg(feature = "real-actuators")]
-pub mod switch;
+pub mod esc;
 
 use serde::{Deserialize, Serialize};
 
@@ -19,4 +19,13 @@ pub(crate) struct Control {
 pub(crate) struct Switch {
     pub esc: bool,
     pub reload: bool,
+}
+
+impl Switch {
+    pub (crate) fn empty() -> Switch {
+        Switch {
+            esc: false,
+            reload: false
+        }
+    }
 }

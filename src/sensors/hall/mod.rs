@@ -2,7 +2,7 @@
 use rppal::gpio::Gpio;
 use rppal::gpio::InputPin;
 use core::f64;
-use std::{f64::consts::PI, time::Instant};
+use std::time::Instant;
 
 const DIAMETRE_ROUE_ENTRAINEE: f64 = 0.6; // en mètre
 
