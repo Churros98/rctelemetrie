@@ -24,13 +24,18 @@ impl Hall {
 
     /// Met à jour la valeur de la vitesse de rotation
     pub(crate) fn update(&mut self) {
+        let current_time = Instant::now();
+        let delta_time = current_time.duration_since(self.last_time);
+        let delta_time_secs = delta_time.as_secs_f64(); // Convertir en f64 pour la division
+
+        // Si la durée est vraiment importante, il est possible que je soit à l'arrêt.
+        if delta_time_secs > 1.5 {
+            self.speed = 0.0;
+        }
+
         // Trigger au front montant
         if self.hall_pin.is_high() && !self.last_state {
-            let current_time = Instant::now();
-
             // Durée pour laquelle 2 pi a été effectué sur la roue mesurée.
-            let delta_time = current_time.duration_since(self.last_time);
-            let delta_time_secs = delta_time.as_secs_f64(); // Convertir en f64 pour la division
             let vitesse_angulaire_roue_mesuree = (2.0 * f64::consts::PI) / delta_time_secs; // rad/s
 
             let vitesse_lineaire_roue_entrainee = vitesse_angulaire_roue_mesuree * (DIAMETRE_ROUE_ENTRAINEE / 2.0); // en m/s
